@@ -5,17 +5,17 @@ import {
 import { 
   LayoutDashboard, CreditCard, PieChart as PieChartIcon, User as UserIcon, 
   Plus, ChevronLeft, ChevronRight, Wallet, ArrowUpCircle, ArrowDownCircle, 
-  Trash2, Edit2, X, Loader2, LogIn, LogOut, Filter, Settings, Target, DollarSign, AlertCircle, Check, AlertTriangle, Moon, Sun, Calendar, Tag
+  Trash2, Edit2, X, Loader2, LogIn, LogOut, Filter, Settings, Target, DollarSign, AlertCircle, Check, AlertTriangle, Moon, Sun, List, CalendarOff, ArchiveX, Zap
 } from 'lucide-react';
 import { 
-  collection, doc, setDoc, deleteDoc, onSnapshot, query, writeBatch, where, getDocs 
+  collection, doc, setDoc, deleteDoc, onSnapshot, query, writeBatch 
 } from 'firebase/firestore';
 import { 
   signInWithEmailAndPassword, onAuthStateChanged, signOut, type User 
 } from 'firebase/auth';
 import { db, auth } from './firebaseConfig';
 
-// --- 1. TIPOS E CONFIGURAÇÕES ---
+// --- 1. TIPOS ---
 export enum AppScreen { Home, Reports, Cards, Profile, Add }
 
 export interface UserSettings {
@@ -97,15 +97,12 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, darkMode }: any
       </div>
 
       <div>
-        <h2 className={`text-lg font-bold mb-4 px-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Histórico Recente</h2>
+        <h2 className={`text-lg font-bold mb-4 px-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Histórico (Últimos Lançamentos)</h2>
         <div className="space-y-3">
           {transactions.slice(0, 20).map((t: Transaction) => {
-             // Lógica de exibição: Se for parcelado, mostra o valor TOTAL da compra na lista visual, 
-             // mas o cálculo do saldo usa apenas a parcela (já tratado no monthDetails).
              const displayAmount = t.installment ? t.amount * t.installment.total : t.amount;
-             
              return (
-              <div onClick={() => onSelectTransaction(t)} key={t.id} className={`group flex justify-between items-center p-4 rounded-2xl shadow-sm border transition-all cursor-pointer active:scale-95 ${darkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-700' : 'bg-white border-gray-50 hover:border-emerald-200 hover:bg-gray-50'}`}>
+              <div onClick={() => onSelectTransaction(t, 'home')} key={t.id} className={`group flex justify-between items-center p-4 rounded-2xl shadow-sm border transition-all cursor-pointer active:scale-95 ${darkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-700' : 'bg-white border-gray-50 hover:border-emerald-200 hover:bg-gray-50'}`}>
                 <div className="flex items-center gap-3">
                   <div className={`p-3 rounded-full ${t.type === 'Entrada' ? (darkMode ? 'bg-emerald-900/50 text-emerald-400' : 'bg-emerald-100 text-emerald-600') : (darkMode ? 'bg-rose-900/50 text-rose-400' : 'bg-rose-50 text-rose-600')}`}>
                     {t.type === 'Entrada' ? <ArrowUpCircle size={20}/> : <ArrowDownCircle size={20}/>}
@@ -140,7 +137,233 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, darkMode }: any
   );
 };
 
-// --- TELA: CARTÕES ---
+// --- TELA: RELATÓRIOS ---
+const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: any) => {
+  const [filterType, setFilterType] = useState('Saída');
+  const [filterCat, setFilterCat] = useState('Todas');
+
+  const data = useMemo(() => {
+    let filtered = transactions.filter((t:any) => t.type === filterType);
+    if(filterCat !== 'Todas') filtered = filtered.filter((t:any) => t.category === filterCat);
+    const map = new Map();
+    filtered.forEach((t: any) => map.set(t.category, (map.get(t.category) || 0) + t.amount));
+    return Array.from(map, ([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value);
+  }, [transactions, filterType, filterCat]);
+
+  const detailedList = useMemo(() => {
+    let list = transactions.filter((t:any) => t.type === filterType);
+    if(filterCat !== 'Todas') list = list.filter((t:any) => t.category === filterCat);
+    return list;
+  }, [transactions, filterType, filterCat]);
+
+  const COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
+
+  return (
+    <div className="p-4 pb-32">
+      <h2 className={`text-xl font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Relatórios</h2>
+      <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
+         <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}><Filter size={14} className="text-gray-400"/></div>
+         <select value={filterType} onChange={e=>setFilterType(e.target.value)} className={`px-4 py-2 rounded-xl border text-sm font-bold outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-600'}`}>
+            <option value="Saída">Despesas</option>
+            <option value="Entrada">Receitas</option>
+         </select>
+         <select value={filterCat} onChange={e=>setFilterCat(e.target.value)} className={`px-4 py-2 rounded-xl border text-sm font-bold outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-600'}`}>
+            <option value="Todas">Todas Categorias</option>
+            {categories.map((c:string) => <option key={c} value={c}>{c}</option>)}
+         </select>
+      </div>
+
+      {data.length > 0 ? (
+        <>
+          <div className={`p-6 rounded-[32px] shadow-sm border h-80 mb-6 relative ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={data} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                  {data.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                </Pie>
+                <RechartsTooltip contentStyle={{backgroundColor: darkMode ? '#1f2937' : '#fff', borderColor: darkMode ? '#374151' : '#e5e7eb', color: darkMode ? '#fff' : '#000'}} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="text-center absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+              <p className="text-[10px] uppercase font-bold text-gray-400">Total</p>
+              <p className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{formatCurrency(data.reduce((acc:number, curr:any) => acc + curr.value, 0))}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 mb-3">
+             <List size={18} className="text-gray-400"/>
+             <h3 className={`font-bold text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Extrato Detalhado</h3>
+          </div>
+          
+          <div className="space-y-2">
+            {detailedList.map((t: Transaction) => (
+              <div onClick={() => onSelectTransaction(t, 'reports')} key={t.id} className={`flex justify-between items-center p-4 rounded-xl border cursor-pointer active:opacity-70 ${darkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-750' : 'bg-white border-gray-50 hover:bg-gray-50'}`}>
+                <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-full ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-500'}`}>
+                        {t.type === 'Entrada' ? <ArrowUpCircle size={16}/> : <ArrowDownCircle size={16}/>}
+                    </div>
+                    <div>
+                        <p className={`font-bold text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{t.description}</p>
+                        <p className="text-xs text-gray-400">{t.category} • {formatDate(t.date)}</p>
+                    </div>
+                </div>
+                <div className="text-right">
+                    <span className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>{formatCurrency(t.amount)}</span>
+                    {t.installment && <p className="text-[10px] text-blue-500 font-bold">Parcela {t.installment.current}/{t.installment.total}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className={`p-10 rounded-[32px] text-center border border-dashed mt-4 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+           <p className="text-gray-400 text-sm">Sem dados para este período.</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// --- MODAL DE EDIÇÃO AVANÇADA / ANTECIPAÇÃO ---
+const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticipate, onDelete, categories, cards, darkMode }: any) => {
+  const [desc, setDesc] = useState(transaction.description);
+  const [cat, setCat] = useState(transaction.category);
+  const [date, setDate] = useState(transaction.date);
+  
+  // Estados para edição complexa
+  const [amount, setAmount] = useState(transaction.amount); 
+  const [paymentMethod, setPaymentMethod] = useState<'Dinheiro'|'Cartão'>(transaction.paymentMethod);
+  const [selectedCard, setSelectedCard] = useState(transaction.cardId || cards[0]?.id || '');
+  const [installments, setInstallments] = useState(transaction.installment?.total || 1);
+
+  // Carregar dados iniciais
+  useEffect(() => {
+     if (transaction.installment) {
+         // Se for parcelado, sempre mostra o TOTAL para edição
+         setAmount(transaction.amount * transaction.installment.total);
+     } else {
+         setAmount(transaction.amount);
+     }
+  }, [transaction]);
+
+  const handleSave = () => {
+    const finalAmount = Number(amount);
+    
+    // Verifica se houve mudança estrutural (forma pagto ou parcelas)
+    const isStructuralChange = 
+        paymentMethod !== transaction.paymentMethod ||
+        (paymentMethod === 'Cartão' && installments !== (transaction.installment?.total || 1)) ||
+        (paymentMethod === 'Cartão' && selectedCard !== transaction.cardId);
+
+    if (isStructuralChange) {
+        // Precisa reescrever (apagar tudo e criar novo)
+        if(confirm('Você alterou a forma de pagamento ou parcelamento. Isso irá recriar todas as transações relacionadas. Continuar?')) {
+            onRewrite(transaction, {
+                description: desc,
+                amount: finalAmount,
+                category: cat,
+                date: date,
+                paymentMethod,
+                cardId: selectedCard,
+                installments
+            });
+            onClose();
+        }
+    } else {
+        // Edição simples
+        let saveAmount = finalAmount;
+        if (transaction.installment) {
+            saveAmount = finalAmount / transaction.installment.total; // Volta para valor da parcela
+        }
+        onRewrite(transaction, { ...transaction, description: desc, amount: saveAmount, category: cat, date, cardId: selectedCard }, true); // true = simple update
+        onClose();
+    }
+  };
+
+  const handleAnticipateClick = () => {
+      if(confirm('Deseja ANTECIPAR todas as parcelas futuras?\n\nIsso somará o valor restante e criará uma única despesa para HOJE, apagando as cobranças dos meses seguintes.')) {
+          onAnticipate(transaction);
+          onClose();
+      }
+  };
+
+  const handleDeleteAll = () => {
+      if(confirm('Excluir este registro? Se for parcelado, apagará TODAS as parcelas (correção de cadastro).')) {
+        onDelete(transaction); 
+        onClose();
+      }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+       <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl overflow-y-auto max-h-[90vh] ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
+          <div className="flex justify-between items-center mb-6">
+             <h3 className="font-bold text-lg">Editar Detalhes</h3>
+             <button onClick={onClose}><X size={20} className="text-gray-400"/></button>
+          </div>
+          
+          <div className="space-y-4">
+             <div>
+               <label className="text-[10px] font-bold text-gray-400 uppercase">Valor Total</label>
+               <input type="number" value={amount} onChange={e=>setAmount(e.target.value)} className={`w-full p-3 rounded-xl border font-bold text-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`} />
+             </div>
+             
+             {/* Seletor de Método de Pagamento */}
+             <div>
+                 <label className="text-[10px] font-bold text-gray-400 uppercase">Pagamento</label>
+                 <div className="flex gap-2 mt-1">
+                    <button onClick={()=>setPaymentMethod('Dinheiro')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${paymentMethod==='Dinheiro' ? 'bg-emerald-100 border-emerald-500 text-emerald-700' : 'border-gray-200 text-gray-400'}`}>Dinheiro/Pix</button>
+                    <button onClick={()=>setPaymentMethod('Cartão')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${paymentMethod==='Cartão' ? 'bg-emerald-100 border-emerald-500 text-emerald-700' : 'border-gray-200 text-gray-400'}`}>Cartão</button>
+                 </div>
+             </div>
+
+             {paymentMethod === 'Cartão' && (
+                 <div className="flex gap-2 animate-in fade-in">
+                     <div className="flex-1">
+                        <label className="text-[10px] font-bold text-gray-400 uppercase">Cartão</label>
+                        <select value={selectedCard} onChange={e=>setSelectedCard(e.target.value)} className={`w-full p-2 rounded-xl border text-sm ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}>
+                            {cards.map((c:any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                     </div>
+                     <div className="w-24">
+                        <label className="text-[10px] font-bold text-gray-400 uppercase">Parcelas</label>
+                        <select value={installments} onChange={e=>setInstallments(Number(e.target.value))} className={`w-full p-2 rounded-xl border text-sm ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}>
+                            {[1,2,3,4,5,6,7,8,9,10,11,12,18,24].map(n => <option key={n} value={n}>{n}x</option>)}
+                        </select>
+                     </div>
+                 </div>
+             )}
+
+             <div>
+               <label className="text-[10px] font-bold text-gray-400 uppercase">Descrição</label>
+               <input value={desc} onChange={e=>setDesc(e.target.value)} className={`w-full p-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`} />
+             </div>
+             <div>
+               <label className="text-[10px] font-bold text-gray-400 uppercase">Data</label>
+               <input type="date" value={date} onChange={e=>setDate(e.target.value)} className={`w-full p-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`} />
+             </div>
+          </div>
+
+          <div className="flex flex-col gap-3 mt-8">
+             <button onClick={handleSave} className="w-full py-4 bg-emerald-600 text-white font-bold rounded-xl shadow-lg shadow-emerald-200">Salvar Alterações</button>
+             
+             {/* BOTÃO DE ANTECIPAR (Só aparece se for parcelado e Cartão) */}
+             {transaction.installment && transaction.installment.current < transaction.installment.total && (
+                 <button onClick={handleAnticipateClick} className="w-full py-3 bg-indigo-50 text-indigo-600 border border-indigo-100 font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-indigo-100">
+                    <Zap size={18}/> Antecipar Parcelas Restantes
+                 </button>
+             )}
+
+             <button onClick={handleDeleteAll} className="w-full py-3 bg-rose-50 text-rose-500 font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-rose-100">
+                <Trash2 size={18}/> Excluir Registro (Erro)
+             </button>
+          </div>
+       </div>
+    </div>
+  );
+};
+
+// --- (CardsScreen e Profile permanecem iguais) ---
 const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDeleteCard, darkMode }: any) => {
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -169,12 +392,9 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
       setIsEditing(false);
     }
   };
-
+  
   const confirmDeleteCard = () => {
-    if(confirm('Tem certeza que deseja EXCLUIR este cartão? Todas as faturas desaparecerão.')) {
-        onDeleteCard(activeCard.id);
-        setSelectedCardId(null);
-    }
+    if(confirm('Tem certeza? Isso apagará este cartão e todas as configurações dele.')) onDeleteCard(activeCard.id);
   }
 
   if (selectedCardId && activeCard) {
@@ -300,150 +520,6 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
     </div>
   );
 };
-
-// --- TELA: RELATÓRIOS ---
-const Reports = ({ transactions, categories, darkMode }: any) => {
-  const [filterType, setFilterType] = useState('Saída');
-  const [filterCat, setFilterCat] = useState('Todas');
-
-  const data = useMemo(() => {
-    let filtered = transactions.filter((t:any) => t.type === filterType);
-    if(filterCat !== 'Todas') filtered = filtered.filter((t:any) => t.category === filterCat);
-    const map = new Map();
-    filtered.forEach((t: any) => map.set(t.category, (map.get(t.category) || 0) + t.amount));
-    return Array.from(map, ([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value);
-  }, [transactions, filterType, filterCat]);
-
-  const COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
-
-  return (
-    <div className="p-4 pb-32">
-      <h2 className={`text-xl font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Relatórios</h2>
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
-         <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}><Filter size={14} className="text-gray-400"/></div>
-         <select value={filterType} onChange={e=>setFilterType(e.target.value)} className={`px-4 py-2 rounded-xl border text-sm font-bold outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-600'}`}>
-            <option value="Saída">Despesas</option>
-            <option value="Entrada">Receitas</option>
-         </select>
-         <select value={filterCat} onChange={e=>setFilterCat(e.target.value)} className={`px-4 py-2 rounded-xl border text-sm font-bold outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-600'}`}>
-            <option value="Todas">Todas Categorias</option>
-            {categories.map((c:string) => <option key={c} value={c}>{c}</option>)}
-         </select>
-      </div>
-
-      {data.length > 0 ? (
-        <>
-          <div className={`p-6 rounded-[32px] shadow-sm border h-80 mb-6 relative ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={data} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                  {data.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                </Pie>
-                <RechartsTooltip contentStyle={{backgroundColor: darkMode ? '#1f2937' : '#fff', borderColor: darkMode ? '#374151' : '#e5e7eb', color: darkMode ? '#fff' : '#000'}} />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="text-center absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none">
-              <p className="text-[10px] uppercase font-bold text-gray-400">Total</p>
-              <p className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{formatCurrency(data.reduce((acc:number, curr:any) => acc + curr.value, 0))}</p>
-            </div>
-          </div>
-          <h3 className={`font-bold mb-3 text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Detalhamento</h3>
-          <div className="space-y-2">
-            {data.map((item:any, idx) => (
-              <div key={item.name} className={`flex justify-between items-center p-4 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-50'}`}>
-                <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 rounded-full" style={{backgroundColor: COLORS[idx % COLORS.length]}} />
-                    <span className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{item.name}</span>
-                </div>
-                <span className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>{formatCurrency(item.value)}</span>
-              </div>
-            ))}
-          </div>
-        </>
-      ) : (
-        <div className={`p-10 rounded-[32px] text-center border border-dashed mt-4 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-           <p className="text-gray-400 text-sm">Sem dados para este período.</p>
-        </div>
-      )}
-    </div>
-  );
-};
-
-// --- MODAL DE EDIÇÃO DE TRANSAÇÃO (NOVO) ---
-const EditTransactionModal = ({ transaction, onClose, onSave, onDelete, categories, darkMode }: any) => {
-  const [desc, setDesc] = useState(transaction.description);
-  const [amount, setAmount] = useState(transaction.installment ? transaction.amount * transaction.installment.total : transaction.amount);
-  const [cat, setCat] = useState(transaction.category);
-  const [date, setDate] = useState(transaction.date);
-
-  const handleSave = () => {
-    // Se for parcelado, o usuario edita o valor total, precisamos dividir de volta para salvar a parcela correta
-    const finalAmount = transaction.installment ? (amount / transaction.installment.total) : amount;
-    
-    onSave({
-      ...transaction,
-      description: desc,
-      amount: Number(finalAmount),
-      category: cat,
-      date: date,
-      month: date.slice(0, 7)
-    });
-    onClose();
-  };
-
-  const handleDelete = () => {
-    if(transaction.installment) {
-      if(confirm('Esta é uma compra parcelada. Deseja excluir TODAS as parcelas futuras?')) {
-        onDelete(transaction);
-        onClose();
-      }
-    } else {
-      if(confirm('Excluir esta transação?')) {
-        onDelete(transaction);
-        onClose();
-      }
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-       <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
-          <div className="flex justify-between items-center mb-6">
-             <h3 className="font-bold text-lg">Editar Transação</h3>
-             <button onClick={onClose}><X size={20} className="text-gray-400"/></button>
-          </div>
-          
-          <div className="space-y-4">
-             <div>
-               <label className="text-[10px] font-bold text-gray-400 uppercase">Valor {transaction.installment ? '(Total da Compra)' : ''}</label>
-               <input type="number" value={amount} onChange={e=>setAmount(e.target.value)} className={`w-full p-3 rounded-xl border font-bold text-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`} />
-             </div>
-             <div>
-               <label className="text-[10px] font-bold text-gray-400 uppercase">Descrição</label>
-               <input value={desc} onChange={e=>setDesc(e.target.value)} className={`w-full p-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`} />
-             </div>
-             <div>
-               <label className="text-[10px] font-bold text-gray-400 uppercase">Categoria</label>
-               <select value={cat} onChange={e=>setCat(e.target.value)} className={`w-full p-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}>
-                  {categories.map((c: string) => <option key={c} value={c}>{c}</option>)}
-               </select>
-             </div>
-             <div>
-               <label className="text-[10px] font-bold text-gray-400 uppercase">Data</label>
-               <input type="date" value={date} onChange={e=>setDate(e.target.value)} className={`w-full p-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`} />
-             </div>
-          </div>
-
-          <div className="flex gap-3 mt-8">
-             <button onClick={handleDelete} className="p-4 bg-rose-50 text-rose-500 rounded-xl hover:bg-rose-100"><Trash2 size={20}/></button>
-             <button onClick={handleSave} className="flex-1 py-4 bg-emerald-600 text-white font-bold rounded-xl shadow-lg shadow-emerald-200">Salvar Alterações</button>
-          </div>
-       </div>
-    </div>
-  );
-};
-
-// --- TELA: PERFIL ---
 const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, onDeleteCategory, onLogout, monthlySavings, darkMode }: any) => {
   const [showCats, setShowCats] = useState(false);
   const [newCat, setNewCat] = useState('');
@@ -586,34 +662,47 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
   );
 };
 
-// --- TELA: NOVA TRANSAÇÃO ---
+// --- TELA: NOVA TRANSAÇÃO (CORRIGIDA E BLINDADA) ---
 const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDetails, darkMode }: any) => {
   const [desc, setDesc] = useState('');
   const [amount, setAmount] = useState('');
-  const [cat, setCat] = useState(categories[0]);
+  const [cat, setCat] = useState(categories[0] || 'Geral');
   const [type, setType] = useState<'Entrada' | 'Saída'>('Saída');
   const [method, setMethod] = useState<'Dinheiro' | 'Cartão'>('Dinheiro');
   const [selectedCard, setSelectedCard] = useState(cards[0]?.id || '');
   const [installments, setInstallments] = useState(1);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [isSaving, setIsSaving] = useState(false);
 
   const [showAlert, setShowAlert] = useState(false);
   const [alertMessages, setAlertMessages] = useState<string[]>([]);
 
+  // Converte valor string (com virgula ou ponto) para float com segurança
+  const parseAmount = (val: string) => {
+    if (!val) return 0;
+    const cleanVal = val.replace(',', '.').replace(/[^0-9.]/g, ''); 
+    const result = parseFloat(cleanVal);
+    return isNaN(result) ? 0 : result;
+  };
+
   const checkBudgets = () => {
-    const val = parseFloat(amount.replace(',', '.'));
-    if(!val) return;
+    const val = parseAmount(amount);
+    
+    if (val <= 0) {
+        alert("Por favor, insira um valor válido maior que zero.");
+        return;
+    }
+    if (!desc.trim()) {
+        alert("Por favor, dê um nome para a transação.");
+        return;
+    }
+
     const messages = [];
 
     if (type === 'Saída') {
-        const catLimit = settings.categoryLimits?.[cat] || 0;
-        if (catLimit > 0) {
-             if(val > catLimit) messages.push(`Esta compra excede o limite definido para ${cat} (R$ ${formatCurrency(catLimit)}).`);
-        }
-        const projectedExpenses = monthDetails.expenses + val;
-        const remainingBudget = settings.monthlyIncome - settings.financialGoal;
-        if (projectedExpenses > remainingBudget) {
-            messages.push(`Atenção: Com esta despesa, você pode não atingir sua meta de economia mensal.`);
+        const catLimit = settings?.categoryLimits?.[cat] || 0;
+        if (catLimit > 0 && val > catLimit) {
+             messages.push(`Esta compra excede o limite de ${cat} (R$ ${formatCurrency(catLimit)}).`);
         }
     }
 
@@ -625,33 +714,50 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
     }
   };
 
-  const confirmSave = () => {
-    const val = parseFloat(amount.replace(',', '.'));
-    if(!val || !desc) return;
-
-    if (type === 'Saída' && method === 'Cartão' && installments > 1) {
-       const parentId = generateId();
-       const batch = [];
-       const baseDate = new Date(date);
-       for(let i = 0; i < installments; i++) {
-          const currentInstDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, baseDate.getDate());
-          batch.push({
-            id: generateId(),
-            description: `${desc} (${i+1}/${installments})`,
-            amount: val / installments,
-            type, category: cat, date: currentInstDate.toISOString().split('T')[0],
-            month: currentInstDate.toISOString().slice(0, 7),
-            paymentMethod: method, cardId: selectedCard,
-            installment: { current: i+1, total: installments }, parentId
-          });
-       }
-       onSave(batch);
-    } else {
-       onSave([{
-         id: generateId(), description: desc, amount: val, type, category: cat,
-         date: date, month: date.slice(0, 7), paymentMethod: method,
-         cardId: method === 'Cartão' ? selectedCard : undefined
-       }]);
+  const confirmSave = async () => {
+    setIsSaving(true);
+    try {
+        const val = parseAmount(amount);
+        
+        if (type === 'Saída' && method === 'Cartão' && installments > 1) {
+           const parentId = generateId();
+           const batch = [];
+           const baseDate = new Date(date);
+           
+           for(let i = 0; i < installments; i++) {
+              const currentInstDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, baseDate.getDate() + 1);
+              batch.push({
+                id: generateId(),
+                description: `${desc} (${i+1}/${installments})`,
+                amount: val / installments,
+                type, 
+                category: cat, 
+                date: currentInstDate.toISOString().split('T')[0],
+                month: currentInstDate.toISOString().slice(0, 7),
+                paymentMethod: method, 
+                cardId: selectedCard,
+                installment: { current: i+1, total: installments }, 
+                parentId
+              });
+           }
+           await onSave(batch);
+        } else {
+           await onSave([{
+             id: generateId(), 
+             description: desc, 
+             amount: val, 
+             type, 
+             category: cat,
+             date: date, 
+             month: date.slice(0, 7), 
+             paymentMethod: method,
+             cardId: method === 'Cartão' ? selectedCard : undefined
+           }]);
+        }
+    } catch (error) {
+        console.error("Erro ao salvar:", error);
+        alert("Erro ao salvar. Tente novamente.");
+        setIsSaving(false);
     }
   };
 
@@ -671,8 +777,8 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
                       ))}
                   </div>
                   <div className="flex gap-3">
-                      <button onClick={() => setShowAlert(false)} className={`flex-1 py-3 font-bold rounded-xl ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-500'}`}>Revisar</button>
-                      <button onClick={confirmSave} className="flex-1 py-3 bg-amber-500 text-white font-bold rounded-xl shadow-lg shadow-amber-200">Confirmar</button>
+                      <button onClick={() => { setShowAlert(false); setIsSaving(false); }} className={`flex-1 py-3 font-bold rounded-xl ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-500'}`}>Revisar</button>
+                      <button onClick={() => { setShowAlert(false); confirmSave(); }} className="flex-1 py-3 bg-amber-500 text-white font-bold rounded-xl shadow-lg shadow-amber-200">Confirmar</button>
                   </div>
               </div>
           </div>
@@ -686,7 +792,7 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
       <form onSubmit={(e) => { e.preventDefault(); checkBudgets(); }} className="p-6 space-y-6 flex-1 overflow-y-auto pb-24">
         <div>
            <label className="text-xs font-bold text-gray-400 uppercase">Valor Total</label>
-           <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)}
+           <input type="tel" value={amount} onChange={e => setAmount(e.target.value)}
              className={`w-full text-5xl font-bold bg-transparent placeholder-gray-500 focus:outline-none py-2 ${darkMode ? 'text-white' : 'text-gray-800'}`} placeholder="0,00" autoFocus />
         </div>
         <div className={`flex p-1 rounded-xl ${darkMode ? 'bg-gray-800' : 'bg-gray-100'}`}>
@@ -732,7 +838,9 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
             ))}
           </div>
         </div>
-        <button type="submit" className="w-full py-4 bg-emerald-600 text-white font-bold rounded-2xl shadow-lg shadow-emerald-200">Confirmar</button>
+        <button type="submit" disabled={isSaving} className={`w-full py-4 font-bold rounded-2xl shadow-lg transition-all ${isSaving ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 text-white shadow-emerald-200'}`}>
+            {isSaving ? 'Salvando...' : 'Confirmar'}
+        </button>
       </form>
     </div>
   );
@@ -752,11 +860,25 @@ export default function App() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   
-  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [editingTransaction, setEditingTransaction] = useState<{data: Transaction, mode: 'home'|'reports'} | null>(null);
 
   const selectedMonthKey = getMonthKey(currentDate);
   const currentYear = currentDate.getFullYear();
   const currentMonthIdx = currentDate.getMonth();
+
+  // --- TRAVA ZOOM NO CELULAR (META TAG + CSS) ---
+  useEffect(() => {
+    let meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.setAttribute('name', 'viewport');
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+    
+    // Forçar CSS global para evitar comportamento elástico
+    document.body.style.touchAction = 'pan-x pan-y';
+  }, []);
 
   useEffect(() => {
     return onAuthStateChanged(auth, (u) => {
@@ -799,16 +921,103 @@ export default function App() {
     setScreen(AppScreen.Home);
   };
 
-  const updateTransaction = async (updatedT: Transaction) => {
-    if(!user) return;
-    await setDoc(doc(db, `users/${user.uid}/transactions`, updatedT.id), updatedT);
+  // Funcao inteligente para reescrever transacoes quando muda a estrutura (ex: 5x para 10x)
+  const rewriteTransaction = async (oldT: Transaction, newData: any, isSimpleUpdate = false) => {
+     if(!user) return;
+     const batch = writeBatch(db);
+
+     // Se for update simples (só mudou nome/data), não precisa deletar e recriar tudo
+     if (isSimpleUpdate) {
+         batch.update(doc(db, `users/${user.uid}/transactions`, oldT.id), newData);
+         await batch.commit();
+         return;
+     }
+
+     // Se for mudança estrutural (ex: Pix -> Cartão ou Parcelas), deleta o grupo antigo
+     if (oldT.parentId) {
+        const siblings = rawTransactions.filter(rt => rt.parentId === oldT.parentId);
+        siblings.forEach(s => batch.delete(doc(db, `users/${user.uid}/transactions`, s.id)));
+     } else {
+        batch.delete(doc(db, `users/${user.uid}/transactions`, oldT.id));
+     }
+
+     // Cria novas transações baseadas nos novos dados
+     if (newData.paymentMethod === 'Cartão' && newData.installments > 1) {
+        const parentId = generateId();
+        const baseDate = new Date(newData.date);
+        for(let i = 0; i < newData.installments; i++) {
+            const currentInstDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, baseDate.getDate() + 1);
+            const newId = generateId();
+            batch.set(doc(db, `users/${user.uid}/transactions`, newId), {
+                id: newId,
+                description: `${newData.description} (${i+1}/${newData.installments})`,
+                amount: newData.amount / newData.installments,
+                type: oldT.type,
+                category: newData.category,
+                date: currentInstDate.toISOString().split('T')[0],
+                month: currentInstDate.toISOString().slice(0, 7),
+                paymentMethod: 'Cartão',
+                cardId: newData.cardId,
+                installment: { current: i+1, total: newData.installments },
+                parentId
+            });
+        }
+     } else {
+        const newId = generateId();
+        batch.set(doc(db, `users/${user.uid}/transactions`, newId), {
+            id: newId,
+            description: newData.description,
+            amount: newData.amount,
+            type: oldT.type,
+            category: newData.category,
+            date: newData.date,
+            month: newData.date.slice(0, 7),
+            paymentMethod: 'Dinheiro'
+        });
+     }
+     await batch.commit();
+  };
+
+  const anticipateTransaction = async (t: Transaction) => {
+      if(!user || !t.parentId || !t.installment) return;
+      const batch = writeBatch(db);
+
+      // Pega todas as parcelas futuras (incluindo a atual, se quiser quitar agora)
+      const currentNum = t.installment.current;
+      const futureInstallments = rawTransactions.filter(rt => rt.parentId === t.parentId && rt.installment && rt.installment.current >= currentNum);
+      
+      // Soma o valor total restante
+      const totalRemaining = futureInstallments.reduce((acc, curr) => acc + curr.amount, 0);
+
+      // Deleta as futuras
+      futureInstallments.forEach(inst => {
+         batch.delete(doc(db, `users/${user.uid}/transactions`, inst.id));
+      });
+
+      // Cria uma nova transação consolidada para HOJE
+      const newId = generateId();
+      const today = new Date().toISOString().split('T')[0];
+      
+      batch.set(doc(db, `users/${user.uid}/transactions`, newId), {
+          id: newId,
+          description: `${t.description.split('(')[0]} (Antecipação)`,
+          amount: totalRemaining,
+          type: 'Saída',
+          category: t.category,
+          date: today,
+          month: today.slice(0, 7),
+          paymentMethod: 'Dinheiro', // Geralmente antecipação se paga no ato, ou entra na fatura atual como valor único
+          cardId: t.cardId // Mantem no cartão para pagar na fatura atual
+      });
+
+      await batch.commit();
   };
 
   const deleteTransaction = async (t: Transaction) => {
     if(!user) return;
     const batch = writeBatch(db);
     
-    // Se for parcela, deleta todas do grupo
+    // Agora o delete é sempre GLOBAL para corrigir erro, ou seja, apaga tudo
     if (t.installment && t.parentId) {
        const allInstallments = rawTransactions.filter(rt => rt.parentId === t.parentId);
        allInstallments.forEach(inst => {
@@ -820,18 +1029,17 @@ export default function App() {
     await batch.commit();
   };
 
+  // ... (Funções de Settings, Cards permanecem iguais)
   const updateSettings = async (newSettings: UserSettings) => {
      if(!user) return;
      setSettings(newSettings);
      await setDoc(doc(db, `users/${user.uid}/settings`, 'config'), { userSettings: newSettings }, { merge: true });
   };
-
   const updateCategories = async (newCats: string[]) => {
     if(!user) return;
     setCategories(newCats);
     await setDoc(doc(db, `users/${user.uid}/settings`, 'config'), { categories: newCats }, { merge: true });
   };
-
   const saveCard = async (updatedCard: CardData) => {
     if(!user) return;
     const exists = cards.find(c => c.id === updatedCard.id);
@@ -839,7 +1047,6 @@ export default function App() {
     setCards(newList);
     await setDoc(doc(db, `users/${user.uid}/settings`, 'cards'), { list: newList }, { merge: true });
   };
-  
   const deleteCard = async (cardId: string) => {
     if(!user) return;
     const newList = cards.filter(c => c.id !== cardId);
@@ -898,8 +1105,8 @@ export default function App() {
       )}
 
       <div className="flex-1 overflow-y-auto pt-4 scrollbar-hide">
-        {screen === AppScreen.Home && <Home transactions={filteredTransactions} monthDetails={monthDetails} onSelectTransaction={setEditingTransaction} darkMode={isDark} />}
-        {screen === AppScreen.Reports && <Reports transactions={filteredTransactions} categories={categories} darkMode={isDark} />}
+        {screen === AppScreen.Home && <Home transactions={filteredTransactions} monthDetails={monthDetails} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'home'})} darkMode={isDark} />}
+        {screen === AppScreen.Reports && <Reports transactions={filteredTransactions} categories={categories} darkMode={isDark} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'reports'})} />}
         {screen === AppScreen.Cards && <CardsScreen cards={cards} transactions={rawTransactions} currentMonthKey={selectedMonthKey} onSaveCard={saveCard} onDeleteCard={deleteCard} darkMode={isDark} />}
         {screen === AppScreen.Profile && <Profile user={user} categories={categories} settings={settings} onUpdateSettings={updateSettings} onAddCategory={(c:string)=>updateCategories([...categories,c])} onDeleteCategory={(c:string)=>updateCategories(categories.filter(x=>x!==c))} onLogout={()=>signOut(auth)} monthlySavings={monthDetails.balance} darkMode={isDark} />}
       </div>
@@ -919,11 +1126,14 @@ export default function App() {
       {/* Modal de Edição */}
       {editingTransaction && (
         <EditTransactionModal 
-          transaction={editingTransaction} 
+          transaction={editingTransaction.data} 
+          mode={editingTransaction.mode}
           categories={categories}
+          cards={cards}
           darkMode={isDark}
           onClose={() => setEditingTransaction(null)}
-          onSave={updateTransaction}
+          onRewrite={rewriteTransaction}
+          onAnticipate={anticipateTransaction}
           onDelete={deleteTransaction}
         />
       )}
