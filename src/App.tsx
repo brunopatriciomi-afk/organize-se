@@ -5,7 +5,7 @@ import {
 import { 
   LayoutDashboard, CreditCard, PieChart as PieChartIcon, User as UserIcon, 
   Plus, ChevronLeft, ChevronRight, Wallet, ArrowUpCircle, ArrowDownCircle, 
-  Trash2, Edit2, X, Loader2, LogIn, LogOut, Filter, Settings, Target, DollarSign, AlertCircle, Check, AlertTriangle, Moon, Sun, List, CalendarOff, ArchiveX, Zap, Save
+  Trash2, Edit2, X, Loader2, LogIn, LogOut, Filter, Settings, Target, DollarSign, AlertCircle, Check, AlertTriangle, Moon, Sun, List, CalendarOff, ArchiveX, Zap, Save, TrendingUp
 } from 'lucide-react';
 import { 
   collection, doc, setDoc, deleteDoc, onSnapshot, query, writeBatch 
@@ -18,17 +18,17 @@ import { db, auth } from './firebaseConfig';
 // --- 1. TIPOS ---
 export enum AppScreen { Home, Reports, Cards, Profile, Add }
 
-export interface Goal {
-  id: string;
-  name: string;
-  amount: number;
-}
+export interface Goal { id: string; name: string; amount: number; }
 
 export interface UserSettings {
   monthlyIncome: number;
   goals: Goal[];
   darkMode: boolean;
   categoryLimits: Record<string, number>;
+  // Listas personalizadas de categorias
+  incomeCategories?: string[];
+  investmentCategories?: string[];
+  expenseCategories?: string[];
 }
 
 export interface CardData {
@@ -45,7 +45,7 @@ export interface Transaction {
   id: string;
   description: string;
   amount: number;
-  type: 'Entrada' | 'Saída';
+  type: 'Entrada' | 'Saída' | 'Investimento'; // Adicionado Investimento
   category: string;
   date: string;
   month: string;
@@ -55,7 +55,11 @@ export interface Transaction {
   parentId?: string;
 }
 
-const DEFAULT_CATEGORIES = ['Alimentação', 'Moradia', 'Transporte', 'Lazer', 'Saúde', 'Educação', 'Compras', 'Serviços', 'Assinaturas'];
+// Categorias Padrão (Fallback)
+const DEFAULT_EXPENSE_CATS = ['Alimentação', 'Moradia', 'Transporte', 'Lazer', 'Saúde', 'Educação', 'Compras', 'Serviços', 'Assinaturas'];
+const DEFAULT_INCOME_CATS = ['Salário', 'Bônus', 'Dinheiro Extra', 'Reembolso'];
+const DEFAULT_INVEST_CATS = ['Reserva', 'Casa', 'Carro', 'Aposentadoria'];
+
 const INITIAL_CARDS: CardData[] = [
   { id: 'card_nubank', name: 'Nubank', holder: 'Bruno', limit: 5000, closingDay: 1, dueDay: 8, color: 'border-l-purple-600' },
   { id: 'card_inter', name: 'Inter', holder: 'Carla', limit: 3000, closingDay: 10, dueDay: 17, color: 'border-l-orange-500' },
@@ -85,18 +89,18 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, darkMode }: any
         <p className="text-emerald-100 font-medium mb-1 text-sm">Saldo em Conta</p>
         <h1 className="text-4xl font-bold mb-8">{formatCurrency(monthDetails.balance)}</h1>
         <div className="flex gap-4">
-          <div className="flex items-center gap-3 bg-black/20 px-4 py-3 rounded-2xl flex-1 backdrop-blur-sm">
-            <div className="p-1.5 bg-emerald-400/20 rounded-full"><ArrowUpCircle size={18} className="text-emerald-200"/></div>
-            <div>
-              <p className="text-[10px] uppercase text-emerald-200 font-bold tracking-wider">Entradas</p>
-              <p className="font-bold text-sm">{formatCurrency(monthDetails.income)}</p>
+          <div className="flex items-center gap-3 bg-black/20 px-3 py-3 rounded-2xl flex-1 backdrop-blur-sm min-w-0">
+            <div className="p-1.5 bg-emerald-400/20 rounded-full shrink-0"><ArrowUpCircle size={18} className="text-emerald-200"/></div>
+            <div className="min-w-0 overflow-hidden">
+              <p className="text-[9px] uppercase text-emerald-200 font-bold tracking-wider truncate">Entradas</p>
+              <p className="font-bold text-sm truncate">{formatCurrency(monthDetails.income)}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3 bg-black/20 px-4 py-3 rounded-2xl flex-1 backdrop-blur-sm">
-            <div className="p-1.5 bg-rose-400/20 rounded-full"><ArrowDownCircle size={18} className="text-rose-200"/></div>
-            <div>
-              <p className="text-[10px] uppercase text-rose-200 font-bold tracking-wider">Saídas</p>
-              <p className="font-bold text-sm">{formatCurrency(monthDetails.expenses)}</p>
+          <div className="flex items-center gap-3 bg-black/20 px-3 py-3 rounded-2xl flex-1 backdrop-blur-sm min-w-0">
+            <div className="p-1.5 bg-rose-400/20 rounded-full shrink-0"><ArrowDownCircle size={18} className="text-rose-200"/></div>
+            <div className="min-w-0 overflow-hidden">
+              <p className="text-[9px] uppercase text-rose-200 font-bold tracking-wider truncate">Saídas</p>
+              <p className="font-bold text-sm truncate">{formatCurrency(monthDetails.expenses)}</p>
             </div>
           </div>
         </div>
@@ -107,11 +111,19 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, darkMode }: any
         <div className="space-y-3">
           {transactions.slice(0, 20).map((t: Transaction) => {
              const displayAmount = t.installment ? t.amount * t.installment.total : t.amount;
+             let iconColor = t.type === 'Entrada' ? (darkMode ? 'text-emerald-400 bg-emerald-900/50' : 'text-emerald-600 bg-emerald-100') : (darkMode ? 'text-rose-400 bg-rose-900/50' : 'text-rose-600 bg-rose-50');
+             let icon = t.type === 'Entrada' ? <ArrowUpCircle size={20}/> : <ArrowDownCircle size={20}/>;
+             
+             if (t.type === 'Investimento') {
+                 iconColor = darkMode ? 'text-blue-400 bg-blue-900/50' : 'text-blue-600 bg-blue-100';
+                 icon = <TrendingUp size={20}/>;
+             }
+
              return (
               <div onClick={() => onSelectTransaction(t, 'home')} key={t.id} className={`group flex justify-between items-center p-4 rounded-2xl shadow-sm border transition-all cursor-pointer active:scale-95 ${darkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-700' : 'bg-white border-gray-50 hover:border-emerald-100 hover:bg-gray-50'}`}>
                 <div className="flex items-center gap-3">
-                  <div className={`p-3 rounded-full ${t.type === 'Entrada' ? (darkMode ? 'bg-emerald-900/50 text-emerald-400' : 'bg-emerald-100 text-emerald-600') : (darkMode ? 'bg-rose-900/50 text-rose-400' : 'bg-rose-50 text-rose-600')}`}>
-                    {t.type === 'Entrada' ? <ArrowUpCircle size={20}/> : <ArrowDownCircle size={20}/>}
+                  <div className={`p-3 rounded-full ${iconColor}`}>
+                    {icon}
                   </div>
                   <div>
                     <p className={`font-bold text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{t.description}</p>
@@ -128,8 +140,8 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, darkMode }: any
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className={`font-bold ${t.type === 'Entrada' ? 'text-emerald-500' : 'text-rose-500'}`}>
-                    {t.type === 'Saída' ? '-' : '+'}{formatCurrency(displayAmount)}
+                  <p className={`font-bold ${t.type === 'Entrada' ? 'text-emerald-500' : (t.type === 'Investimento' ? 'text-blue-500' : 'text-rose-500')}`}>
+                    {t.type === 'Entrada' ? '+' : '-'}{formatCurrency(displayAmount)}
                   </p>
                   {t.installment && <p className="text-[10px] text-gray-400">Total da compra</p>}
                 </div>
@@ -149,11 +161,20 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
   const [filterCat, setFilterCat] = useState('Todas');
 
   const data = useMemo(() => {
+    // Filtra pelo tipo selecionado (Saída ou Investimento, etc)
     let filtered = transactions.filter((t:any) => t.type === filterType);
     if(filterCat !== 'Todas') filtered = filtered.filter((t:any) => t.category === filterCat);
+    
     const map = new Map();
     filtered.forEach((t: any) => map.set(t.category, (map.get(t.category) || 0) + t.amount));
-    return Array.from(map, ([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value);
+    
+    const totalVal = Array.from(map.values()).reduce((a:number, b:number) => a + b, 0);
+
+    return Array.from(map, ([name, value]) => ({ 
+        name, 
+        value, 
+        percent: totalVal > 0 ? (value / totalVal) * 100 : 0 
+    })).sort((a,b) => b.value - a.value);
   }, [transactions, filterType, filterCat]);
 
   const detailedList = useMemo(() => {
@@ -162,7 +183,7 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
     return list;
   }, [transactions, filterType, filterCat]);
 
-  const COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
+  const COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1'];
 
   return (
     <div className="p-4 pb-32">
@@ -171,10 +192,12 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}><Filter size={14} className="text-gray-400"/></div>
          <select value={filterType} onChange={e=>setFilterType(e.target.value)} className={`px-4 py-2 rounded-xl border text-sm font-bold outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-600'}`}>
             <option value="Saída">Despesas</option>
+            <option value="Investimento">Investimentos</option>
             <option value="Entrada">Receitas</option>
          </select>
          <select value={filterCat} onChange={e=>setFilterCat(e.target.value)} className={`px-4 py-2 rounded-xl border text-sm font-bold outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-600'}`}>
             <option value="Todas">Todas Categorias</option>
+            {/* Aqui poderiamos filtrar as categorias pelo tipo, mas mostrar todas tbm funciona */}
             {categories.map((c:string) => <option key={c} value={c}>{c}</option>)}
          </select>
       </div>
@@ -185,9 +208,10 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie data={data} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                  {data.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                  {data.map((entry:any, index:number) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
                 </Pie>
                 <RechartsTooltip 
+                    formatter={(value: number, name: string, props: any) => [`${props.payload.percent.toFixed(1)}%`, name]}
                     contentStyle={{
                         backgroundColor: darkMode ? '#1f2937' : '#fff', 
                         borderColor: darkMode ? '#374151' : '#e5e7eb',
@@ -219,7 +243,7 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
               <div onClick={() => onSelectTransaction(t, 'reports')} key={t.id} className={`flex justify-between items-center p-4 rounded-xl border cursor-pointer active:opacity-70 ${darkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-750' : 'bg-white border-gray-50 hover:bg-gray-50'}`}>
                 <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-full ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-500'}`}>
-                        {t.type === 'Entrada' ? <ArrowUpCircle size={16}/> : <ArrowDownCircle size={16}/>}
+                        {t.type === 'Entrada' ? <ArrowUpCircle size={16}/> : (t.type === 'Investimento' ? <TrendingUp size={16}/> : <ArrowDownCircle size={16}/>)}
                     </div>
                     <div>
                         <p className={`font-bold text-sm ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>{t.description}</p>
@@ -243,8 +267,8 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
   );
 };
 
-// --- MODAL DE EDIÇÃO (COM TRAVA PAN-Y) ---
-const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticipate, onDelete, categories, cards, darkMode }: any) => {
+// --- MODAL DE EDIÇÃO ---
+const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticipate, onDelete, settings, cards, darkMode }: any) => {
   const [desc, setDesc] = useState(transaction.description);
   const [cat, setCat] = useState(transaction.category);
   const [date, setDate] = useState(transaction.date);
@@ -253,6 +277,16 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
   const [paymentMethod, setPaymentMethod] = useState<'Dinheiro'|'Cartão'>(transaction.paymentMethod);
   const [selectedCard, setSelectedCard] = useState(transaction.cardId || cards[0]?.id || '');
   const [installments, setInstallments] = useState(transaction.installment?.total || 1);
+
+  // Define qual lista de categorias mostrar baseado no tipo da transação original
+  const currentCategories = transaction.type === 'Entrada' 
+    ? (settings.incomeCategories || DEFAULT_INCOME_CATS)
+    : (transaction.type === 'Investimento' ? (settings.investmentCategories || DEFAULT_INVEST_CATS) : (settings.expenseCategories || DEFAULT_EXPENSE_CATS));
+
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = 'auto'; };
+  }, []);
 
   useEffect(() => {
      if (transaction.installment) {
@@ -264,14 +298,13 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
 
   const handleSave = () => {
     const finalAmount = Number(amount);
-    
     const isStructuralChange = 
         paymentMethod !== transaction.paymentMethod ||
         (paymentMethod === 'Cartão' && installments !== (transaction.installment?.total || 1)) ||
         (paymentMethod === 'Cartão' && selectedCard !== transaction.cardId);
 
     if (isStructuralChange) {
-        if(confirm('Você alterou a forma de pagamento ou parcelamento. Isso irá recriar todas as transações relacionadas. Continuar?')) {
+        if(confirm('Isso irá recriar todas as transações relacionadas. Continuar?')) {
             onRewrite(transaction, {
                 description: desc,
                 amount: finalAmount,
@@ -285,9 +318,7 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
         }
     } else {
         let saveAmount = finalAmount;
-        if (transaction.installment) {
-            saveAmount = finalAmount / transaction.installment.total; 
-        }
+        if (transaction.installment) saveAmount = finalAmount / transaction.installment.total; 
         const cardIdToSave = paymentMethod === 'Cartão' ? selectedCard : null;
         onRewrite(transaction, { ...transaction, description: desc, amount: saveAmount, category: cat, date, cardId: cardIdToSave }, true);
         onClose();
@@ -303,12 +334,8 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-       {/* TRAVA PAN-Y APLICADA NO CONTAINER INTERNO */}
-       <div 
-         className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl overflow-y-auto overflow-x-hidden max-h-[90dvh] ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}
-         style={{ touchAction: 'pan-y' }}
-       >
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" style={{touchAction: 'none'}}>
+       <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl overflow-y-auto max-h-[90dvh] ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`} style={{touchAction: 'pan-y'}}>
           <div className="flex justify-between items-center mb-6">
              <h3 className="font-bold text-lg">Editar Detalhes</h3>
              <button onClick={onClose}><X size={20} className="text-gray-400"/></button>
@@ -343,6 +370,12 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
                  </div>
              )}
              <div>
+               <label className="text-[10px] font-bold text-gray-400 uppercase">Categoria</label>
+               <select value={cat} onChange={e=>setCat(e.target.value)} className={`w-full p-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}>
+                  {currentCategories.map((c: string) => <option key={c} value={c}>{c}</option>)}
+               </select>
+             </div>
+             <div>
                <label className="text-[10px] font-bold text-gray-400 uppercase">Descrição</label>
                <input value={desc} onChange={e=>setDesc(e.target.value)} className={`w-full p-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`} />
              </div>
@@ -370,12 +403,17 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
   );
 };
 
-// --- (CardsScreen - Reutilizado) ---
+// --- (CardsScreen - Com edição completa) ---
 const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDeleteCard, darkMode }: any) => {
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  
+  // Estados para edição
   const [editName, setEditName] = useState('');
   const [editHolder, setEditHolder] = useState('');
+  const [editLimit, setEditLimit] = useState('');
+  const [editClosing, setEditClosing] = useState('');
+  const [editDue, setEditDue] = useState('');
 
   const getInvoiceTotal = (cardId: string, monthKey: string) => {
     return transactions
@@ -389,13 +427,23 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
     if(activeCard) {
       setEditName(activeCard.name);
       setEditHolder(activeCard.holder);
+      setEditLimit(activeCard.limit.toString());
+      setEditClosing(activeCard.closingDay.toString());
+      setEditDue(activeCard.dueDay.toString());
       setIsEditing(true);
     }
   };
 
   const saveEdit = () => {
     if(activeCard) {
-      onSaveCard({ ...activeCard, name: editName, holder: editHolder });
+      onSaveCard({ 
+          ...activeCard, 
+          name: editName, 
+          holder: editHolder,
+          limit: parseFloat(editLimit),
+          closingDay: parseInt(editClosing),
+          dueDay: parseInt(editDue)
+      });
       setIsEditing(false);
     }
   };
@@ -428,14 +476,28 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
            <div className={`p-4 rounded-2xl shadow-lg border space-y-3 animate-in fade-in ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
               <h3 className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Editar Cartão</h3>
               <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase">Nome do Cartão</label>
-                <input value={editName} onChange={e=>setEditName(e.target.value)} className={`w-full p-2 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200'}`}/>
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Nome</label>
+                <input value={editName} onChange={e=>setEditName(e.target.value)} className={`w-full p-2 border rounded-lg text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200'}`}/>
               </div>
               <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase">Titular (Nome)</label>
-                <input value={editHolder} onChange={e=>setEditHolder(e.target.value)} placeholder="Ex: Bruno" className={`w-full p-2 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200'}`}/>
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Titular</label>
+                <input value={editHolder} onChange={e=>setEditHolder(e.target.value)} className={`w-full p-2 border rounded-lg text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200'}`}/>
               </div>
               <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Limite</label>
+                    <input type="number" value={editLimit} onChange={e=>setEditLimit(e.target.value)} className={`w-full p-2 border rounded-lg text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200'}`}/>
+                  </div>
+                  <div className="w-20">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Fech.</label>
+                    <input type="number" value={editClosing} onChange={e=>setEditClosing(e.target.value)} className={`w-full p-2 border rounded-lg text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200'}`}/>
+                  </div>
+                  <div className="w-20">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Venc.</label>
+                    <input type="number" value={editDue} onChange={e=>setEditDue(e.target.value)} className={`w-full p-2 border rounded-lg text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200'}`}/>
+                  </div>
+              </div>
+              <div className="flex gap-2 mt-2">
                 <button onClick={() => setIsEditing(false)} className="flex-1 py-2 text-gray-500 font-bold text-xs">Cancelar</button>
                 <button onClick={saveEdit} className="flex-1 py-2 bg-emerald-600 text-white rounded-lg font-bold text-xs">Salvar</button>
               </div>
@@ -443,6 +505,7 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
            </div>
          )}
 
+         {/* Resto do card details igual */}
          <div className={`rounded-[24px] p-6 shadow-sm border text-center ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
             <div className="flex items-center gap-2 mb-4">
                <CreditCard size={18} className="text-emerald-500"/>
@@ -527,10 +590,16 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
     </div>
   );
 };
-const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, onDeleteCategory, onLogout, monthlySavings, darkMode }: any) => {
+
+// --- PERFIL ---
+const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, onDeleteCategory, onLogout, monthlySavings, transactions, darkMode }: any) => {
   const [showCats, setShowCats] = useState(false);
   const [showGoals, setShowGoals] = useState(false);
+  const [showInvestments, setShowInvestments] = useState(false); // Novo
+  
   const [newCat, setNewCat] = useState('');
+  const [newInvestCat, setNewInvestCat] = useState(''); // Novo
+
   const [isEditingIncome, setIsEditingIncome] = useState(false);
   const [tempIncome, setTempIncome] = useState(settings.monthlyIncome.toString());
 
@@ -555,6 +624,18 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
     onUpdateSettings({ ...settings, goals: updatedGoals });
   };
 
+  // Gerenciamento de Categorias de Investimento
+  const handleAddInvestCat = () => {
+      if(!newInvestCat) return;
+      const currentList = settings.investmentCategories || DEFAULT_INVEST_CATS;
+      onUpdateSettings({ ...settings, investmentCategories: [...currentList, newInvestCat] });
+      setNewInvestCat('');
+  };
+  const handleDeleteInvestCat = (c: string) => {
+      const currentList = settings.investmentCategories || DEFAULT_INVEST_CATS;
+      onUpdateSettings({ ...settings, investmentCategories: currentList.filter((x:string) => x !== c) });
+  };
+
   const updateCategoryLimit = (cat: string, limit: string) => {
     const newLimits = { ...settings.categoryLimits, [cat]: parseFloat(limit) };
     onUpdateSettings({ ...settings, categoryLimits: newLimits });
@@ -565,6 +646,16 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
   };
 
   const totalGoals = settings.goals ? settings.goals.reduce((acc:number, g:Goal) => acc + g.amount, 0) : 0;
+
+  // Calcular total investido por categoria (Geral, não só do mês)
+  const investmentsSummary = useMemo(() => {
+      const investTransactions = transactions.filter((t:any) => t.type === 'Investimento');
+      const map = new Map();
+      investTransactions.forEach((t:any) => map.set(t.category, (map.get(t.category) || 0) + t.amount));
+      return Array.from(map, ([name, value]) => ({ name, value }));
+  }, [transactions]);
+
+  const investmentCats = settings.investmentCategories || DEFAULT_INVEST_CATS;
 
   return (
     <div className="p-4 pb-32 space-y-6">
@@ -611,7 +702,7 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
             )}
          </div>
 
-         {/* Múltiplas Metas (Collapsible) */}
+         {/* Múltiplas Metas */}
          <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
             <div onClick={() => setShowGoals(!showGoals)} className="p-4 flex items-center justify-between cursor-pointer">
                 <div className="flex items-center gap-4">
@@ -623,7 +714,6 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
                 </div>
                 <ChevronRight size={16} className={`text-gray-300 transition-transform ${showGoals ? 'rotate-90' : ''}`}/>
             </div>
-            
             {showGoals && (
                 <div className={`px-4 pb-4 border-t animate-in slide-in-from-top-2 ${darkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50/50 border-gray-100'}`}>
                     <div className="flex gap-2 mb-3 mt-3">
@@ -641,20 +731,58 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
                             </div>
                         </div>
                     ))}
-                    {(!settings.goals || settings.goals.length === 0) && <p className="text-xs text-gray-400 text-center py-2">Nenhuma meta cadastrada.</p>}
                     </div>
                 </div>
             )}
          </div>
 
-         {/* Categorias e Limites */}
+         {/* Meus Investimentos (NOVO) */}
+         <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+            <div onClick={() => setShowInvestments(!showInvestments)} className="p-4 flex items-center justify-between cursor-pointer">
+                <div className="flex items-center gap-4">
+                   <div className={`p-3 rounded-full ${darkMode ? 'bg-indigo-900/50 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><TrendingUp size={20}/></div>
+                   <div>
+                      <p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Meus Investimentos</p>
+                      <p className="text-xs text-gray-400">Gerenciar Categorias</p>
+                   </div>
+                </div>
+                <ChevronRight size={16} className={`text-gray-300 transition-transform ${showInvestments ? 'rotate-90' : ''}`}/>
+            </div>
+            {showInvestments && (
+                <div className={`px-4 pb-4 border-t animate-in slide-in-from-top-2 ${darkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50/50 border-gray-100'}`}>
+                    {/* Add Category */}
+                    <div className="flex gap-2 mb-3 mt-3">
+                        <input placeholder="Nova Categoria (Ex: Cripto)" value={newInvestCat} onChange={e=>setNewInvestCat(e.target.value)} className={`flex-1 p-2 text-xs border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white'}`} />
+                        <button onClick={handleAddInvestCat} className="bg-emerald-600 text-white p-2 rounded-lg"><Plus size={16}/></button>
+                    </div>
+                    {/* List */}
+                    <div className="space-y-2">
+                        {investmentCats.map((c: string) => {
+                            // Find total value for this category from transactions
+                            const total = investmentsSummary.find(i => i.name === c)?.value || 0;
+                            return (
+                                <div key={c} className={`flex justify-between items-center p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}>
+                                    <div>
+                                        <span className={`text-sm font-medium block ${darkMode ? 'text-white' : 'text-gray-700'}`}>{c}</span>
+                                        <span className="text-[10px] text-gray-400">Acumulado: {formatCurrency(total)}</span>
+                                    </div>
+                                    <button onClick={() => handleDeleteInvestCat(c)} className="text-gray-400 hover:text-rose-500"><Trash2 size={14}/></button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+         </div>
+
+         {/* Categorias e Limites (Despesas) */}
          <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
              <div onClick={() => setShowCats(!showCats)} className="p-4 flex items-center justify-between cursor-pointer">
                 <div className="flex items-center gap-4">
                    <div className={`p-3 rounded-full ${darkMode ? 'bg-rose-900/50 text-rose-400' : 'bg-rose-50 text-rose-600'}`}><AlertCircle size={20}/></div>
                    <div>
-                      <p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Categorias e Limites</p>
-                      <p className="text-xs text-gray-400">{categories.length} ativas</p>
+                      <p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Limites de Despesas</p>
+                      <p className="text-xs text-gray-400">{categories.length} categorias</p>
                    </div>
                 </div>
                 <ChevronRight size={16} className={`text-gray-300 transition-transform ${showCats ? 'rotate-90' : ''}`}/>
@@ -696,22 +824,30 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
   );
 };
 
-// --- TELA: NOVA TRANSAÇÃO (TRAVADA COM PAN-Y) ---
+// --- TELA: NOVA TRANSAÇÃO (COM INVESTIMENTOS) ---
 const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDetails, darkMode }: any) => {
   const [desc, setDesc] = useState('');
   const [amount, setAmount] = useState('');
-  const [cat, setCat] = useState(categories[0] || 'Geral');
-  const [type, setType] = useState<'Entrada' | 'Saída'>('Saída');
+  const [type, setType] = useState<'Entrada' | 'Saída' | 'Investimento'>('Saída');
   const [method, setMethod] = useState<'Dinheiro' | 'Cartão'>('Dinheiro');
   const [selectedCard, setSelectedCard] = useState(cards[0]?.id || '');
   const [installments, setInstallments] = useState(1);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [isSaving, setIsSaving] = useState(false);
+  const [cat, setCat] = useState('');
 
   const [showAlert, setShowAlert] = useState(false);
   const [alertMessages, setAlertMessages] = useState<string[]>([]);
 
-  // Limpeza de string numérica robusta
+  // Carregar lista de categorias correta
+  const currentCategories = useMemo(() => {
+      if (type === 'Entrada') return settings.incomeCategories || DEFAULT_INCOME_CATS;
+      if (type === 'Investimento') return settings.investmentCategories || DEFAULT_INVEST_CATS;
+      return categories; // Despesas (padrão)
+  }, [type, settings, categories]);
+
+  useEffect(() => { setCat(currentCategories[0]); }, [currentCategories]);
+
   const parseAmount = (val: string) => {
     if (!val) return 0;
     const cleanVal = val.replace(',', '.').replace(/[^0-9.]/g, ''); 
@@ -721,32 +857,24 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
 
   const checkBudgets = () => {
     const val = parseAmount(amount);
-    
-    if (val <= 0) {
-        alert("Por favor, insira um valor válido maior que zero.");
-        return;
-    }
-    if (!desc.trim()) {
-        alert("Por favor, dê um nome para a transação.");
-        return;
-    }
+    if (val <= 0) { alert("Valor inválido."); return; }
+    if (!desc.trim()) { alert("Insira uma descrição."); return; }
 
     const messages = [];
 
     if (type === 'Saída') {
         const catLimit = settings?.categoryLimits?.[cat] || 0;
         if (catLimit > 0 && val > catLimit) {
-             messages.push(`Esta compra excede o limite de ${cat} (R$ ${formatCurrency(catLimit)}).`);
+             messages.push(`Limite excedido em ${cat} (R$ ${formatCurrency(catLimit)}).`);
         }
-
+        // Verificar Metas
         const totalGoals = settings.goals ? settings.goals.reduce((acc:number, g:Goal) => acc + g.amount, 0) : 0;
         const currentExpenses = monthDetails?.expenses || 0;
         const income = settings?.monthlyIncome || 0;
         const remainingAfterPurchase = income - (currentExpenses + val);
-        
         if (totalGoals > 0 && remainingAfterPurchase < totalGoals) {
             const missing = totalGoals - remainingAfterPurchase;
-            messages.push(`Atenção: Essa compra compromete suas metas. Faltarão ${formatCurrency(missing)} para atingir todas as metas.`);
+            messages.push(`Atenção: Essa compra impacta suas metas (Faltam ${formatCurrency(missing)}).`);
         }
     }
 
@@ -762,68 +890,47 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
     setIsSaving(true);
     try {
         const val = parseAmount(amount);
-        const cardIdToSave = method === 'Cartão' ? selectedCard : null;
+        const cardIdToSave = (method === 'Cartão' && type === 'Saída') ? selectedCard : null;
 
         if (type === 'Saída' && method === 'Cartão' && installments > 1) {
            const parentId = generateId();
            const batch = [];
            const baseDate = new Date(date);
-           
            for(let i = 0; i < installments; i++) {
               const currentInstDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, baseDate.getDate() + 1);
               batch.push({
                 id: generateId(),
                 description: `${desc} (${i+1}/${installments})`,
                 amount: val / installments,
-                type, 
-                category: cat, 
-                date: currentInstDate.toISOString().split('T')[0],
+                type, category: cat, date: currentInstDate.toISOString().split('T')[0],
                 month: currentInstDate.toISOString().slice(0, 7),
-                paymentMethod: method, 
-                cardId: cardIdToSave,
-                installment: { current: i+1, total: installments }, 
-                parentId
+                paymentMethod: method, cardId: cardIdToSave,
+                installment: { current: i+1, total: installments }, parentId
               });
            }
            await onSave(batch);
         } else {
            await onSave([{
-             id: generateId(), 
-             description: desc, 
-             amount: val, 
-             type, 
-             category: cat,
-             date: date, 
-             month: date.slice(0, 7), 
-             paymentMethod: method,
-             cardId: cardIdToSave
+             id: generateId(), description: desc, amount: val, type, category: cat,
+             date: date, month: date.slice(0, 7), paymentMethod: method, cardId: cardIdToSave
            }]);
         }
-    } catch (error) {
-        console.error("Erro ao salvar:", error);
-        alert("Erro ao salvar. Tente novamente.");
-        setIsSaving(false);
-    }
+    } catch (error) { alert("Erro ao salvar."); setIsSaving(false); }
   };
 
   return (
     <div className={`fixed inset-0 w-full h-full z-50 flex flex-col animate-in slide-in-from-bottom duration-300 overflow-hidden ${darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`} style={{overscrollBehavior: 'none', height: '100dvh'}}>
-      
       {showAlert && (
           <div className="absolute inset-0 z-[60] bg-black/50 flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in">
               <div className={`rounded-3xl p-6 w-full max-w-sm shadow-2xl ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                  <div className="flex justify-center mb-4">
-                      <div className="bg-amber-100 p-4 rounded-full text-amber-600"><AlertTriangle size={32}/></div>
-                  </div>
-                  <h3 className={`text-xl font-bold text-center mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Atenção ao Orçamento</h3>
+                  <div className="flex justify-center mb-4"><div className="bg-amber-100 p-4 rounded-full text-amber-600"><AlertTriangle size={32}/></div></div>
+                  <h3 className={`text-xl font-bold text-center mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Aviso de Orçamento</h3>
                   <div className="space-y-2 mb-6">
-                      {alertMessages.map((msg, idx) => (
-                          <p key={idx} className={`text-sm text-center p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-300' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>{msg}</p>
-                      ))}
+                      {alertMessages.map((msg, idx) => (<p key={idx} className={`text-sm text-center p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-300' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>{msg}</p>))}
                   </div>
                   <div className="flex gap-3">
                       <button onClick={() => { setShowAlert(false); setIsSaving(false); }} className={`flex-1 py-3 font-bold rounded-xl ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-500'}`}>Revisar</button>
-                      <button onClick={() => { setShowAlert(false); confirmSave(); }} className="flex-1 py-3 bg-amber-500 text-white font-bold rounded-xl shadow-lg shadow-amber-200">Confirmar</button>
+                      <button onClick={() => { setShowAlert(false); confirmSave(); }} className={`flex-1 py-3 font-bold rounded-xl ${darkMode ? 'bg-amber-600 text-white' : 'bg-amber-500 text-white shadow-lg'}`}>Confirmar</button>
                   </div>
               </div>
           </div>
@@ -834,11 +941,7 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
         <h2 className="font-bold text-lg">Nova Transação</h2>
         <div className="w-9" />
       </div>
-      <form 
-        onSubmit={(e) => { e.preventDefault(); checkBudgets(); }} 
-        className="p-6 space-y-6 flex-1 overflow-y-auto pb-24 overscroll-contain"
-        style={{ touchAction: 'pan-y' }}
-      >
+      <form onSubmit={(e) => { e.preventDefault(); checkBudgets(); }} className="p-6 space-y-6 flex-1 overflow-y-auto pb-24 overscroll-contain" style={{ touchAction: 'pan-y' }}>
         <div>
            <label className="text-xs font-bold text-gray-400 uppercase">Valor Total</label>
            <input type="tel" value={amount} onChange={e => setAmount(e.target.value)}
@@ -847,6 +950,7 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
         <div className={`flex p-1 rounded-xl ${darkMode ? 'bg-gray-800' : 'bg-gray-100'}`}>
           <button type="button" onClick={() => setType('Saída')} className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${type === 'Saída' ? (darkMode ? 'bg-gray-700 text-rose-400' : 'bg-white text-rose-600 shadow-sm') : 'text-gray-400'}`}>Despesa</button>
           <button type="button" onClick={() => setType('Entrada')} className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${type === 'Entrada' ? (darkMode ? 'bg-gray-700 text-emerald-400' : 'bg-white text-emerald-600 shadow-sm') : 'text-gray-400'}`}>Receita</button>
+          <button type="button" onClick={() => setType('Investimento')} className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${type === 'Investimento' ? (darkMode ? 'bg-gray-700 text-blue-400' : 'bg-white text-blue-600 shadow-sm') : 'text-gray-400'}`}>Investir</button>
         </div>
         <div className="space-y-2">
            <label className="text-xs font-bold text-gray-400 uppercase">Descrição</label>
@@ -879,7 +983,7 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
         <div className="space-y-2 pt-2">
           <label className="text-xs font-bold text-gray-400 uppercase">Categoria</label>
           <div className="flex flex-wrap gap-2">
-            {categories.map((c: string) => (
+            {currentCategories.map((c: string) => (
                <button key={c} type="button" onClick={() => setCat(c)} 
                  className={`px-4 py-2 rounded-full text-sm font-medium border transition-all ${cat === c ? 'bg-emerald-600 text-white border-emerald-600' : (darkMode ? 'bg-gray-800 border-gray-700 text-gray-400' : 'bg-white text-gray-600 border-gray-200')}`}>
                  {c}
@@ -887,8 +991,7 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
             ))}
           </div>
         </div>
-        {/* BOTÃO SEM SOMBRA NO DARK MODE, SOMBRA SUTIL NO LIGHT */}
-        <button type="submit" disabled={isSaving} className={`w-full py-4 font-bold rounded-2xl transition-all ${isSaving ? 'bg-gray-400 cursor-not-allowed' : (darkMode ? 'bg-emerald-600 text-white shadow-none' : 'bg-emerald-600 text-white shadow-lg shadow-emerald-100/50')}`}>
+        <button type="submit" disabled={isSaving} className={`w-full py-4 font-bold rounded-2xl transition-all ${isSaving ? 'bg-gray-400 cursor-not-allowed' : (darkMode ? 'bg-emerald-600 text-white shadow-none' : 'bg-emerald-600 text-white shadow-emerald-200')}`}>
             {isSaving ? 'Salvando...' : 'Confirmar'}
         </button>
       </form>
@@ -901,7 +1004,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [rawTransactions, setRawTransactions] = useState<Transaction[]>([]);
   const [cards, setCards] = useState<CardData[]>(INITIAL_CARDS);
-  const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
+  const [categories, setCategories] = useState<string[]>(DEFAULT_EXPENSE_CATS);
   const [settings, setSettings] = useState<UserSettings>({ monthlyIncome: 5000, financialGoal: 1000, goals: [], darkMode: false, categoryLimits: {} });
   
   const [screen, setScreen] = useState<AppScreen>(AppScreen.Home);
@@ -912,14 +1015,12 @@ export default function App() {
   
   const [editingTransaction, setEditingTransaction] = useState<{data: Transaction, mode: 'home'|'reports'} | null>(null);
 
-  // REF PARA O SCROLL DOS MESES
   const monthsRef = useRef<HTMLDivElement>(null);
 
   const selectedMonthKey = getMonthKey(currentDate);
   const currentYear = currentDate.getFullYear();
   const currentMonthIdx = currentDate.getMonth();
 
-  // TRAVA ZOOM E BOUNCE GERAL
   useEffect(() => {
     let meta = document.querySelector('meta[name="viewport"]');
     if (!meta) {
@@ -959,18 +1060,19 @@ export default function App() {
   const filteredTransactions = useMemo(() => rawTransactions.filter(t => t.month === selectedMonthKey), [rawTransactions, selectedMonthKey]);
   const monthDetails = useMemo(() => {
     let inc = 0, exp = 0;
-    filteredTransactions.forEach(t => t.type === 'Entrada' ? inc += t.amount : exp += t.amount);
+    filteredTransactions.forEach(t => {
+        if(t.type === 'Entrada') inc += t.amount;
+        else exp += t.amount; // Despesa ou Investimento conta como saída
+    });
     return { income: inc, expenses: exp, balance: inc - exp };
   }, [filteredTransactions]);
 
-  // SCROLL AUTOMÁTICO QUANDO MUDA DE TELA OU DE MÊS
   useEffect(() => {
     if (monthsRef.current) {
-        // Calcula a posição aproximada: 70px por botão (ajustável)
         const scrollPos = (currentMonthIdx * 70) - (window.innerWidth / 2) + 35;
         monthsRef.current.scrollTo({ left: scrollPos, behavior: 'smooth' });
     }
-  }, [currentMonthIdx, screen]); // Executa quando muda o mês OU a tela
+  }, [currentMonthIdx, screen]);
 
   const handleLogin = async (e:any) => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, email, password); } catch(e) { alert("Erro ao entrar."); } };
   
@@ -985,20 +1087,13 @@ export default function App() {
   const rewriteTransaction = async (oldT: Transaction, newData: any, isSimpleUpdate = false) => {
      if(!user) return;
      const batch = writeBatch(db);
-
-     if (isSimpleUpdate) {
-         batch.update(doc(db, `users/${user.uid}/transactions`, oldT.id), newData);
-         await batch.commit();
-         return;
-     }
-
+     if (isSimpleUpdate) { batch.update(doc(db, `users/${user.uid}/transactions`, oldT.id), newData); await batch.commit(); return; }
      if (oldT.parentId) {
         const siblings = rawTransactions.filter(rt => rt.parentId === oldT.parentId);
         siblings.forEach(s => batch.delete(doc(db, `users/${user.uid}/transactions`, s.id)));
      } else {
         batch.delete(doc(db, `users/${user.uid}/transactions`, oldT.id));
      }
-
      if (newData.paymentMethod === 'Cartão' && newData.installments > 1) {
         const parentId = generateId();
         const baseDate = new Date(newData.date);
@@ -1006,31 +1101,17 @@ export default function App() {
             const currentInstDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, baseDate.getDate() + 1);
             const newId = generateId();
             batch.set(doc(db, `users/${user.uid}/transactions`, newId), {
-                id: newId,
-                description: `${newData.description} (${i+1}/${newData.installments})`,
-                amount: newData.amount / newData.installments,
-                type: oldT.type,
-                category: newData.category,
-                date: currentInstDate.toISOString().split('T')[0],
-                month: currentInstDate.toISOString().slice(0, 7),
-                paymentMethod: 'Cartão',
-                cardId: newData.cardId,
-                installment: { current: i+1, total: newData.installments },
-                parentId
+                id: newId, description: `${newData.description} (${i+1}/${newData.installments})`,
+                amount: newData.amount / newData.installments, type: oldT.type, category: newData.category,
+                date: currentInstDate.toISOString().split('T')[0], month: currentInstDate.toISOString().slice(0, 7),
+                paymentMethod: 'Cartão', cardId: newData.cardId, installment: { current: i+1, total: newData.installments }, parentId
             });
         }
      } else {
         const newId = generateId();
         batch.set(doc(db, `users/${user.uid}/transactions`, newId), {
-            id: newId,
-            description: newData.description,
-            amount: newData.amount,
-            type: oldT.type,
-            category: newData.category,
-            date: newData.date,
-            month: newData.date.slice(0, 7),
-            paymentMethod: 'Dinheiro',
-            cardId: null
+            id: newId, description: newData.description, amount: newData.amount, type: oldT.type, category: newData.category,
+            date: newData.date, month: newData.date.slice(0, 7), paymentMethod: 'Dinheiro', cardId: null
         });
      }
      await batch.commit();
@@ -1039,30 +1120,16 @@ export default function App() {
   const anticipateTransaction = async (t: Transaction) => {
       if(!user || !t.parentId || !t.installment) return;
       const batch = writeBatch(db);
-
       const currentNum = t.installment.current;
       const futureInstallments = rawTransactions.filter(rt => rt.parentId === t.parentId && rt.installment && rt.installment.current >= currentNum);
       const totalRemaining = futureInstallments.reduce((acc, curr) => acc + curr.amount, 0);
-
-      futureInstallments.forEach(inst => {
-         batch.delete(doc(db, `users/${user.uid}/transactions`, inst.id));
-      });
-
+      futureInstallments.forEach(inst => { batch.delete(doc(db, `users/${user.uid}/transactions`, inst.id)); });
       const newId = generateId();
       const today = new Date().toISOString().split('T')[0];
-      
       batch.set(doc(db, `users/${user.uid}/transactions`, newId), {
-          id: newId,
-          description: `${t.description.split('(')[0]} (Antecipação)`,
-          amount: totalRemaining,
-          type: 'Saída',
-          category: t.category,
-          date: today,
-          month: today.slice(0, 7),
-          paymentMethod: 'Dinheiro', 
-          cardId: t.cardId
+          id: newId, description: `${t.description.split('(')[0]} (Antecipação)`, amount: totalRemaining,
+          type: 'Saída', category: t.category, date: today, month: today.slice(0, 7), paymentMethod: 'Dinheiro', cardId: t.cardId
       });
-
       await batch.commit();
   };
 
@@ -1071,9 +1138,7 @@ export default function App() {
     const batch = writeBatch(db);
     if (t.installment && t.parentId) {
        const allInstallments = rawTransactions.filter(rt => rt.parentId === t.parentId);
-       allInstallments.forEach(inst => {
-          batch.delete(doc(db, `users/${user.uid}/transactions`, inst.id));
-       });
+       allInstallments.forEach(inst => { batch.delete(doc(db, `users/${user.uid}/transactions`, inst.id)); });
     } else {
        batch.delete(doc(db, `users/${user.uid}/transactions`, t.id));
     }
@@ -1121,14 +1186,8 @@ export default function App() {
           <h1 className="text-2xl font-bold text-center text-gray-900 mb-2">Finanças Casal</h1>
           <p className="text-center text-gray-500 text-xs mb-8 uppercase tracking-wide">Acesse sua conta</p>
           <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-               <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Email</label>
-               <input type="email" className="w-full p-3 bg-gray-50 rounded-xl outline-none border border-gray-100 focus:border-emerald-500 transition-colors" value={email} onChange={e=>setEmail(e.target.value)} />
-            </div>
-            <div>
-               <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Senha</label>
-               <input type="password" className="w-full p-3 bg-gray-50 rounded-xl outline-none border border-gray-100 focus:border-emerald-500 transition-colors" value={password} onChange={e=>setPassword(e.target.value)} />
-            </div>
+            <div><label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Email</label><input type="email" className="w-full p-3 bg-gray-50 rounded-xl outline-none border border-gray-100 focus:border-emerald-500" value={email} onChange={e=>setEmail(e.target.value)} /></div>
+            <div><label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Senha</label><input type="password" className="w-full p-3 bg-gray-50 rounded-xl outline-none border border-gray-100 focus:border-emerald-500" value={password} onChange={e=>setPassword(e.target.value)} /></div>
             <button type="submit" className="w-full bg-emerald-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-emerald-700 transition-all mt-4">Entrar</button>
           </form>
         </div>
@@ -1147,8 +1206,6 @@ export default function App() {
               <h2 className={`text-xl font-bold ${isDark ? 'text-white' : 'text-gray-800'}`}>{currentYear}</h2>
               <button onClick={() => changeYear(1)} className={`p-2 hover:text-emerald-500 ${isDark ? 'text-gray-400' : 'text-gray-400'}`}><ChevronRight size={20}/></button>
            </div>
-           
-           {/* MENU DE MESES COM SCROLL AUTOMÁTICO */}
            <div ref={monthsRef} className="flex overflow-x-auto px-6 gap-3 pb-4 scrollbar-hide">
               {MONTHS.map((m, idx) => (
                  <button key={m} onClick={() => changeMonth(idx)} 
@@ -1164,14 +1221,13 @@ export default function App() {
         {screen === AppScreen.Home && <Home transactions={filteredTransactions} monthDetails={monthDetails} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'home'})} darkMode={isDark} />}
         {screen === AppScreen.Reports && <Reports transactions={filteredTransactions} categories={categories} darkMode={isDark} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'reports'})} />}
         {screen === AppScreen.Cards && <CardsScreen cards={cards} transactions={rawTransactions} currentMonthKey={selectedMonthKey} onSaveCard={saveCard} onDeleteCard={deleteCard} darkMode={isDark} />}
-        {screen === AppScreen.Profile && <Profile user={user} categories={categories} settings={settings} onUpdateSettings={updateSettings} onAddCategory={(c:string)=>updateCategories([...categories,c])} onDeleteCategory={(c:string)=>updateCategories(categories.filter(x=>x!==c))} onLogout={()=>signOut(auth)} monthlySavings={monthDetails.balance} darkMode={isDark} />}
+        {screen === AppScreen.Profile && <Profile user={user} categories={categories} settings={settings} transactions={rawTransactions} onUpdateSettings={updateSettings} onAddCategory={(c:string)=>updateCategories([...categories,c])} onDeleteCategory={(c:string)=>updateCategories(categories.filter(x=>x!==c))} onLogout={()=>signOut(auth)} monthlySavings={monthDetails.balance} darkMode={isDark} />}
       </div>
 
       {screen !== AppScreen.Add && (
         <div className={`fixed bottom-0 w-full border-t p-2 pb-6 flex justify-between items-center px-8 z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-100'}`}>
           <button onClick={() => setScreen(AppScreen.Home)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Home ? 'text-emerald-500' : 'text-gray-400'}`}><LayoutDashboard size={24} strokeWidth={screen===AppScreen.Home?2.5:2} /><span className="text-[10px] font-bold">Início</span></button>
           <button onClick={() => setScreen(AppScreen.Cards)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Cards ? 'text-emerald-500' : 'text-gray-400'}`}><CreditCard size={24} strokeWidth={screen===AppScreen.Cards?2.5:2} /><span className="text-[10px] font-bold">Cartões</span></button>
-          {/* Botão flutuante SEM SOMBRA no dark mode, Sombra suave no Light */}
           <div className="relative -top-8"><button onClick={() => setScreen(AppScreen.Add)} className={`w-14 h-14 rounded-full shadow-xl flex items-center justify-center hover:scale-105 transition-transform ${isDark ? 'bg-emerald-600 text-white shadow-none' : 'bg-emerald-600 text-white shadow-emerald-100/50'}`}><Plus size={32}/></button></div>
           <button onClick={() => setScreen(AppScreen.Reports)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Reports ? 'text-emerald-500' : 'text-gray-400'}`}><PieChartIcon size={24} strokeWidth={screen===AppScreen.Reports?2.5:2} /><span className="text-[10px] font-bold">Relatórios</span></button>
           <button onClick={() => setScreen(AppScreen.Profile)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Profile ? 'text-emerald-500' : 'text-gray-400'}`}><UserIcon size={24} strokeWidth={screen===AppScreen.Profile?2.5:2} /><span className="text-[10px] font-bold">Perfil</span></button>
@@ -1180,12 +1236,12 @@ export default function App() {
 
       {screen === AppScreen.Add && <AddTransaction categories={categories} cards={cards} settings={settings} monthDetails={monthDetails} onSave={addTransactions} onCancel={() => setScreen(AppScreen.Home)} darkMode={isDark} />}
       
-      {/* Modal de Edição */}
       {editingTransaction && (
         <EditTransactionModal 
           transaction={editingTransaction.data} 
           mode={editingTransaction.mode}
           categories={categories}
+          settings={settings} // Passando settings para ter acesso a categorias personalizadas
           cards={cards}
           darkMode={isDark}
           onClose={() => setEditingTransaction(null)}
