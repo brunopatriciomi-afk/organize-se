@@ -1,0 +1,27 @@
+/* Importando a fonte bonita (Inter) usada em apps modernos */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* Configuração Geral */
+:root {
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #f9fafb; /* Cor de fundo suave */
+  overflow: hidden; /* Evita rolagem dupla */
+}
+
+/* Utilitário para esconder a barra de rolagem (usado no seu código) */
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+
+.scrollbar-hide {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+}
+}
