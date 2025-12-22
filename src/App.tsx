@@ -5,10 +5,10 @@ import {
 import { 
   LayoutDashboard, CreditCard, PieChart as PieChartIcon, User as UserIcon, 
   Plus, ChevronLeft, ChevronRight, Wallet, ArrowUpCircle, ArrowDownCircle, 
-  Trash2, Edit2, X, Loader2, LogIn, LogOut, Filter, Settings, Target, DollarSign, AlertCircle, Check, AlertTriangle, Moon, Sun, List, CalendarOff, ArchiveX, Zap, Save, TrendingUp
+  Trash2, Edit2, X, Loader2, LogIn, LogOut, Filter, Settings, Target, DollarSign, AlertCircle, Check, AlertTriangle, Moon, Sun, List, CalendarOff, ArchiveX, Zap, Save, TrendingUp, ArrowRightCircle
 } from 'lucide-react';
 import { 
-  collection, doc, setDoc, deleteDoc, onSnapshot, query, writeBatch 
+  collection, doc, setDoc, deleteDoc, onSnapshot, query, writeBatch, where, getDocs 
 } from 'firebase/firestore';
 import { 
   signInWithEmailAndPassword, onAuthStateChanged, signOut, type User 
@@ -25,7 +25,6 @@ export interface UserSettings {
   goals: Goal[];
   darkMode: boolean;
   categoryLimits: Record<string, number>;
-  // Listas personalizadas de categorias
   incomeCategories?: string[];
   investmentCategories?: string[];
   expenseCategories?: string[];
@@ -45,7 +44,7 @@ export interface Transaction {
   id: string;
   description: string;
   amount: number;
-  type: 'Entrada' | 'Saída' | 'Investimento'; // Adicionado Investimento
+  type: 'Entrada' | 'Saída' | 'Investimento';
   category: string;
   date: string;
   month: string;
@@ -53,9 +52,10 @@ export interface Transaction {
   cardId?: string | null;
   installment?: { current: number; total: number };
   parentId?: string;
+  transferId?: string; // ID para vincular transferência de saldo
 }
 
-// Categorias Padrão (Fallback)
+// Categorias Padrão
 const DEFAULT_EXPENSE_CATS = ['Alimentação', 'Moradia', 'Transporte', 'Lazer', 'Saúde', 'Educação', 'Compras', 'Serviços', 'Assinaturas'];
 const DEFAULT_INCOME_CATS = ['Salário', 'Bônus', 'Dinheiro Extra', 'Reembolso'];
 const DEFAULT_INVEST_CATS = ['Reserva', 'Casa', 'Carro', 'Aposentadoria'];
@@ -81,7 +81,7 @@ const getMonthKey = (date: Date) => date.toISOString().slice(0, 7);
 // --- 3. COMPONENTES ---
 
 // --- TELA: HOME ---
-const Home = ({ transactions, monthDetails, onSelectTransaction, darkMode }: any) => {
+const Home = ({ transactions, monthDetails, onSelectTransaction, onTransferBalance, darkMode }: any) => {
   return (
     <div className="space-y-6 p-4 pb-32">
       <div className={`rounded-[32px] p-6 relative overflow-hidden transition-colors ${darkMode ? 'bg-emerald-900 text-white shadow-none' : 'bg-emerald-600 text-white shadow-xl shadow-emerald-100/50'}`}>
@@ -104,12 +104,20 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, darkMode }: any
             </div>
           </div>
         </div>
+        
+        {/* BOTÃO TRANSFERIR SALDO (SÓ APARECE SE TIVER SALDO POSITIVO) */}
+        {monthDetails.balance > 0 && (
+            <button onClick={() => onTransferBalance(monthDetails.balance)} className="mt-6 w-full py-3 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-bold flex items-center justify-center gap-2 backdrop-blur-sm transition-all">
+                <ArrowRightCircle size={16}/> Transferir Sobra para Mês Seguinte
+            </button>
+        )}
       </div>
 
       <div>
-        <h2 className={`text-lg font-bold mb-4 px-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Histórico (Últimos Lançamentos)</h2>
+        <h2 className={`text-lg font-bold mb-4 px-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Histórico (Últimos 5)</h2>
         <div className="space-y-3">
-          {transactions.slice(0, 20).map((t: Transaction) => {
+          {/* CORREÇÃO: Slice para pegar apenas os 5 primeiros */}
+          {transactions.slice(0, 5).map((t: Transaction) => {
              const displayAmount = t.installment ? t.amount * t.installment.total : t.amount;
              let iconColor = t.type === 'Entrada' ? (darkMode ? 'text-emerald-400 bg-emerald-900/50' : 'text-emerald-600 bg-emerald-100') : (darkMode ? 'text-rose-400 bg-rose-900/50' : 'text-rose-600 bg-rose-50');
              let icon = t.type === 'Entrada' ? <ArrowUpCircle size={20}/> : <ArrowDownCircle size={20}/>;
@@ -161,19 +169,13 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
   const [filterCat, setFilterCat] = useState('Todas');
 
   const data = useMemo(() => {
-    // Filtra pelo tipo selecionado (Saída ou Investimento, etc)
     let filtered = transactions.filter((t:any) => t.type === filterType);
     if(filterCat !== 'Todas') filtered = filtered.filter((t:any) => t.category === filterCat);
-    
     const map = new Map();
     filtered.forEach((t: any) => map.set(t.category, (map.get(t.category) || 0) + t.amount));
-    
     const totalVal = Array.from(map.values()).reduce((a:number, b:number) => a + b, 0);
-
     return Array.from(map, ([name, value]) => ({ 
-        name, 
-        value, 
-        percent: totalVal > 0 ? (value / totalVal) * 100 : 0 
+        name, value, percent: totalVal > 0 ? (value / totalVal) * 100 : 0 
     })).sort((a,b) => b.value - a.value);
   }, [transactions, filterType, filterCat]);
 
@@ -197,7 +199,6 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
          </select>
          <select value={filterCat} onChange={e=>setFilterCat(e.target.value)} className={`px-4 py-2 rounded-xl border text-sm font-bold outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-600'}`}>
             <option value="Todas">Todas Categorias</option>
-            {/* Aqui poderiamos filtrar as categorias pelo tipo, mas mostrar todas tbm funciona */}
             {categories.map((c:string) => <option key={c} value={c}>{c}</option>)}
          </select>
       </div>
@@ -212,17 +213,8 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
                 </Pie>
                 <RechartsTooltip 
                     formatter={(value: number, name: string, props: any) => [`${props.payload.percent.toFixed(1)}%`, name]}
-                    contentStyle={{
-                        backgroundColor: darkMode ? '#1f2937' : '#fff', 
-                        borderColor: darkMode ? '#374151' : '#e5e7eb',
-                        borderRadius: '12px',
-                        padding: '10px'
-                    }}
-                    itemStyle={{
-                        color: darkMode ? '#F3F4F6' : '#111827', 
-                        fontWeight: 'bold',
-                        fontSize: '12px'
-                    }}
+                    contentStyle={{ backgroundColor: darkMode ? '#1f2937' : '#fff', borderColor: darkMode ? '#374151' : '#e5e7eb', borderRadius: '12px', padding: '10px' }}
+                    itemStyle={{ color: darkMode ? '#F3F4F6' : '#111827', fontWeight: 'bold', fontSize: '12px' }}
                     labelStyle={{ display: 'none' }} 
                 />
               </PieChart>
@@ -239,23 +231,34 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
           </div>
           
           <div className="space-y-2">
-            {detailedList.map((t: Transaction) => (
-              <div onClick={() => onSelectTransaction(t, 'reports')} key={t.id} className={`flex justify-between items-center p-4 rounded-xl border cursor-pointer active:opacity-70 ${darkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-750' : 'bg-white border-gray-50 hover:bg-gray-50'}`}>
-                <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-full ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-500'}`}>
-                        {t.type === 'Entrada' ? <ArrowUpCircle size={16}/> : (t.type === 'Investimento' ? <TrendingUp size={16}/> : <ArrowDownCircle size={16}/>)}
+            {detailedList.map((t: Transaction) => {
+              // CORREÇÃO: Cores corretas para despesa (vermelho) e receita (verde)
+              const isIncome = t.type === 'Entrada';
+              const isInvest = t.type === 'Investimento';
+              const iconColor = isIncome ? (darkMode ? 'text-emerald-400 bg-emerald-900/50' : 'text-emerald-600 bg-emerald-100') 
+                                         : (isInvest ? (darkMode ? 'text-blue-400 bg-blue-900/50' : 'text-blue-600 bg-blue-100') 
+                                         : (darkMode ? 'text-rose-400 bg-rose-900/50' : 'text-rose-600 bg-rose-50'));
+              
+              const amountColor = isIncome ? 'text-emerald-500' : (isInvest ? 'text-blue-500' : 'text-rose-500');
+
+              return (
+                <div onClick={() => onSelectTransaction(t, 'reports')} key={t.id} className={`flex justify-between items-center p-4 rounded-xl border cursor-pointer active:opacity-70 ${darkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-750' : 'bg-white border-gray-50 hover:bg-gray-50'}`}>
+                    <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-full ${iconColor}`}>
+                            {isIncome ? <ArrowUpCircle size={16}/> : (isInvest ? <TrendingUp size={16}/> : <ArrowDownCircle size={16}/>)}
+                        </div>
+                        <div>
+                            <p className={`font-bold text-sm ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>{t.description}</p>
+                            <p className="text-xs text-gray-400">{t.category} • {formatDate(t.date)}</p>
+                        </div>
                     </div>
-                    <div>
-                        <p className={`font-bold text-sm ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>{t.description}</p>
-                        <p className="text-xs text-gray-400">{t.category} • {formatDate(t.date)}</p>
+                    <div className="text-right">
+                        <span className={`font-bold text-sm ${amountColor}`}>{isIncome ? '+' : '-'}{formatCurrency(t.amount)}</span>
+                        {t.installment && <p className="text-[10px] text-blue-500 font-bold">Parcela {t.installment.current}/{t.installment.total}</p>}
                     </div>
                 </div>
-                <div className="text-right">
-                    <span className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>{formatCurrency(t.amount)}</span>
-                    {t.installment && <p className="text-[10px] text-blue-500 font-bold">Parcela {t.installment.current}/{t.installment.total}</p>}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>
       ) : (
@@ -278,7 +281,7 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
   const [selectedCard, setSelectedCard] = useState(transaction.cardId || cards[0]?.id || '');
   const [installments, setInstallments] = useState(transaction.installment?.total || 1);
 
-  // Define qual lista de categorias mostrar baseado no tipo da transação original
+  // Lista de categorias correta
   const currentCategories = transaction.type === 'Entrada' 
     ? (settings.incomeCategories || DEFAULT_INCOME_CATS)
     : (transaction.type === 'Investimento' ? (settings.investmentCategories || DEFAULT_INVEST_CATS) : (settings.expenseCategories || DEFAULT_EXPENSE_CATS));
@@ -298,6 +301,7 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
 
   const handleSave = () => {
     const finalAmount = Number(amount);
+    
     const isStructuralChange = 
         paymentMethod !== transaction.paymentMethod ||
         (paymentMethod === 'Cartão' && installments !== (transaction.installment?.total || 1)) ||
@@ -306,13 +310,8 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
     if (isStructuralChange) {
         if(confirm('Isso irá recriar todas as transações relacionadas. Continuar?')) {
             onRewrite(transaction, {
-                description: desc,
-                amount: finalAmount,
-                category: cat,
-                date: date,
-                paymentMethod,
-                cardId: paymentMethod === 'Cartão' ? selectedCard : null,
-                installments
+                description: desc, amount: finalAmount, category: cat, date: date,
+                paymentMethod, cardId: paymentMethod === 'Cartão' ? selectedCard : null, installments
             });
             onClose();
         }
@@ -330,7 +329,8 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
   };
 
   const handleDeleteAll = () => {
-      if(confirm('Excluir este registro?')) { onDelete(transaction); onClose(); }
+      // CORREÇÃO: Texto do botão e do confirm removendo "Erro"
+      if(confirm('Deseja realmente excluir este registro?')) { onDelete(transaction); onClose(); }
   };
 
   return (
@@ -346,29 +346,36 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
                <label className="text-[10px] font-bold text-gray-400 uppercase">Valor Total</label>
                <input type="number" value={amount} onChange={e=>setAmount(e.target.value)} className={`w-full p-3 rounded-xl border font-bold text-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`} />
              </div>
-             <div>
-                 <label className="text-[10px] font-bold text-gray-400 uppercase">Pagamento</label>
-                 <div className="flex gap-2 mt-1">
-                    <button onClick={()=>setPaymentMethod('Dinheiro')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${paymentMethod==='Dinheiro' ? 'bg-emerald-100 border-emerald-500 text-emerald-700' : 'border-gray-200 text-gray-400'}`}>Dinheiro/Pix</button>
-                    <button onClick={()=>setPaymentMethod('Cartão')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${paymentMethod==='Cartão' ? 'bg-emerald-100 border-emerald-500 text-emerald-700' : 'border-gray-200 text-gray-400'}`}>Cartão</button>
-                 </div>
-             </div>
-             {paymentMethod === 'Cartão' && (
-                 <div className="flex gap-2 animate-in fade-in">
-                     <div className="flex-1">
-                        <label className="text-[10px] font-bold text-gray-400 uppercase">Cartão</label>
-                        <select value={selectedCard} onChange={e=>setSelectedCard(e.target.value)} className={`w-full p-2 rounded-xl border text-sm ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}>
-                            {cards.map((c:any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
-                     </div>
-                     <div className="w-24">
-                        <label className="text-[10px] font-bold text-gray-400 uppercase">Parcelas</label>
-                        <select value={installments} onChange={e=>setInstallments(Number(e.target.value))} className={`w-full p-2 rounded-xl border text-sm ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}>
-                            {[1,2,3,4,5,6,7,8,9,10,11,12,18,24].map(n => <option key={n} value={n}>{n}x</option>)}
-                        </select>
-                     </div>
-                 </div>
+             
+             {/* Esconde método de pagamento se for transferência de saldo automática */}
+             {!transaction.transferId && (
+                 <>
+                    <div>
+                        <label className="text-[10px] font-bold text-gray-400 uppercase">Pagamento</label>
+                        <div className="flex gap-2 mt-1">
+                            <button onClick={()=>setPaymentMethod('Dinheiro')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${paymentMethod==='Dinheiro' ? 'bg-emerald-100 border-emerald-500 text-emerald-700' : 'border-gray-200 text-gray-400'}`}>Dinheiro/Pix</button>
+                            <button onClick={()=>setPaymentMethod('Cartão')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${paymentMethod==='Cartão' ? 'bg-emerald-100 border-emerald-500 text-emerald-700' : 'border-gray-200 text-gray-400'}`}>Cartão</button>
+                        </div>
+                    </div>
+                    {paymentMethod === 'Cartão' && (
+                        <div className="flex gap-2 animate-in fade-in">
+                            <div className="flex-1">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase">Cartão</label>
+                                <select value={selectedCard} onChange={e=>setSelectedCard(e.target.value)} className={`w-full p-2 rounded-xl border text-sm ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}>
+                                    {cards.map((c:any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                </select>
+                            </div>
+                            <div className="w-24">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase">Parcelas</label>
+                                <select value={installments} onChange={e=>setInstallments(Number(e.target.value))} className={`w-full p-2 rounded-xl border text-sm ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}>
+                                    {[1,2,3,4,5,6,7,8,9,10,11,12,18,24].map(n => <option key={n} value={n}>{n}x</option>)}
+                                </select>
+                            </div>
+                        </div>
+                    )}
+                 </>
              )}
+
              <div>
                <label className="text-[10px] font-bold text-gray-400 uppercase">Categoria</label>
                <select value={cat} onChange={e=>setCat(e.target.value)} className={`w-full p-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}>
@@ -394,8 +401,9 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
                  </button>
              )}
 
+             {/* CORREÇÃO: Botão Excluir sem "Erro" no nome */}
              <button onClick={handleDeleteAll} className="w-full py-3 bg-rose-50 text-rose-500 font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-rose-100">
-                <Trash2 size={18}/> Excluir Registro (Erro)
+                <Trash2 size={18}/> Excluir Registro
              </button>
           </div>
        </div>
@@ -403,12 +411,11 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
   );
 };
 
-// --- (CardsScreen - Com edição completa) ---
+// --- (CardsScreen) ---
+// ... Mantenha o CardsScreen idêntico ao anterior ...
 const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDeleteCard, darkMode }: any) => {
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  
-  // Estados para edição
   const [editName, setEditName] = useState('');
   const [editHolder, setEditHolder] = useState('');
   const [editLimit, setEditLimit] = useState('');
@@ -476,11 +483,11 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
            <div className={`p-4 rounded-2xl shadow-lg border space-y-3 animate-in fade-in ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
               <h3 className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Editar Cartão</h3>
               <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase">Nome</label>
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Nome do Cartão</label>
                 <input value={editName} onChange={e=>setEditName(e.target.value)} className={`w-full p-2 border rounded-lg text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200'}`}/>
               </div>
               <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase">Titular</label>
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Titular (Nome)</label>
                 <input value={editHolder} onChange={e=>setEditHolder(e.target.value)} className={`w-full p-2 border rounded-lg text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200'}`}/>
               </div>
               <div className="flex gap-2">
@@ -505,7 +512,6 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
            </div>
          )}
 
-         {/* Resto do card details igual */}
          <div className={`rounded-[24px] p-6 shadow-sm border text-center ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
             <div className="flex items-center gap-2 mb-4">
                <CreditCard size={18} className="text-emerald-500"/>
@@ -595,10 +601,10 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
 const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, onDeleteCategory, onLogout, monthlySavings, transactions, darkMode }: any) => {
   const [showCats, setShowCats] = useState(false);
   const [showGoals, setShowGoals] = useState(false);
-  const [showInvestments, setShowInvestments] = useState(false); // Novo
+  const [showInvestments, setShowInvestments] = useState(false);
   
   const [newCat, setNewCat] = useState('');
-  const [newInvestCat, setNewInvestCat] = useState(''); // Novo
+  const [newInvestCat, setNewInvestCat] = useState('');
 
   const [isEditingIncome, setIsEditingIncome] = useState(false);
   const [tempIncome, setTempIncome] = useState(settings.monthlyIncome.toString());
@@ -624,7 +630,6 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
     onUpdateSettings({ ...settings, goals: updatedGoals });
   };
 
-  // Gerenciamento de Categorias de Investimento
   const handleAddInvestCat = () => {
       if(!newInvestCat) return;
       const currentList = settings.investmentCategories || DEFAULT_INVEST_CATS;
@@ -647,7 +652,6 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
 
   const totalGoals = settings.goals ? settings.goals.reduce((acc:number, g:Goal) => acc + g.amount, 0) : 0;
 
-  // Calcular total investido por categoria (Geral, não só do mês)
   const investmentsSummary = useMemo(() => {
       const investTransactions = transactions.filter((t:any) => t.type === 'Investimento');
       const map = new Map();
@@ -736,7 +740,7 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
             )}
          </div>
 
-         {/* Meus Investimentos (NOVO) */}
+         {/* Meus Investimentos */}
          <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
             <div onClick={() => setShowInvestments(!showInvestments)} className="p-4 flex items-center justify-between cursor-pointer">
                 <div className="flex items-center gap-4">
@@ -750,15 +754,12 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
             </div>
             {showInvestments && (
                 <div className={`px-4 pb-4 border-t animate-in slide-in-from-top-2 ${darkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50/50 border-gray-100'}`}>
-                    {/* Add Category */}
                     <div className="flex gap-2 mb-3 mt-3">
                         <input placeholder="Nova Categoria (Ex: Cripto)" value={newInvestCat} onChange={e=>setNewInvestCat(e.target.value)} className={`flex-1 p-2 text-xs border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white'}`} />
                         <button onClick={handleAddInvestCat} className="bg-emerald-600 text-white p-2 rounded-lg"><Plus size={16}/></button>
                     </div>
-                    {/* List */}
                     <div className="space-y-2">
                         {investmentCats.map((c: string) => {
-                            // Find total value for this category from transactions
                             const total = investmentsSummary.find(i => i.name === c)?.value || 0;
                             return (
                                 <div key={c} className={`flex justify-between items-center p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}>
@@ -824,26 +825,25 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
   );
 };
 
-// --- TELA: NOVA TRANSAÇÃO (COM INVESTIMENTOS) ---
+// --- TELA: NOVA TRANSAÇÃO ---
 const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDetails, darkMode }: any) => {
   const [desc, setDesc] = useState('');
   const [amount, setAmount] = useState('');
+  const [cat, setCat] = useState(categories[0] || 'Geral');
   const [type, setType] = useState<'Entrada' | 'Saída' | 'Investimento'>('Saída');
   const [method, setMethod] = useState<'Dinheiro' | 'Cartão'>('Dinheiro');
   const [selectedCard, setSelectedCard] = useState(cards[0]?.id || '');
   const [installments, setInstallments] = useState(1);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [isSaving, setIsSaving] = useState(false);
-  const [cat, setCat] = useState('');
 
   const [showAlert, setShowAlert] = useState(false);
   const [alertMessages, setAlertMessages] = useState<string[]>([]);
 
-  // Carregar lista de categorias correta
   const currentCategories = useMemo(() => {
       if (type === 'Entrada') return settings.incomeCategories || DEFAULT_INCOME_CATS;
       if (type === 'Investimento') return settings.investmentCategories || DEFAULT_INVEST_CATS;
-      return categories; // Despesas (padrão)
+      return categories;
   }, [type, settings, categories]);
 
   useEffect(() => { setCat(currentCategories[0]); }, [currentCategories]);
@@ -867,14 +867,13 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
         if (catLimit > 0 && val > catLimit) {
              messages.push(`Limite excedido em ${cat} (R$ ${formatCurrency(catLimit)}).`);
         }
-        // Verificar Metas
         const totalGoals = settings.goals ? settings.goals.reduce((acc:number, g:Goal) => acc + g.amount, 0) : 0;
         const currentExpenses = monthDetails?.expenses || 0;
         const income = settings?.monthlyIncome || 0;
         const remainingAfterPurchase = income - (currentExpenses + val);
         if (totalGoals > 0 && remainingAfterPurchase < totalGoals) {
             const missing = totalGoals - remainingAfterPurchase;
-            messages.push(`Atenção: Essa compra impacta suas metas (Faltam ${formatCurrency(missing)}).`);
+            messages.push(`Atenção: Impacto em metas (${formatCurrency(missing)} faltantes).`);
         }
     }
 
@@ -899,12 +898,9 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
            for(let i = 0; i < installments; i++) {
               const currentInstDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, baseDate.getDate() + 1);
               batch.push({
-                id: generateId(),
-                description: `${desc} (${i+1}/${installments})`,
-                amount: val / installments,
-                type, category: cat, date: currentInstDate.toISOString().split('T')[0],
-                month: currentInstDate.toISOString().slice(0, 7),
-                paymentMethod: method, cardId: cardIdToSave,
+                id: generateId(), description: `${desc} (${i+1}/${installments})`,
+                amount: val / installments, type, category: cat, date: currentInstDate.toISOString().split('T')[0],
+                month: currentInstDate.toISOString().slice(0, 7), paymentMethod: method, cardId: cardIdToSave,
                 installment: { current: i+1, total: installments }, parentId
               });
            }
@@ -924,7 +920,7 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
           <div className="absolute inset-0 z-[60] bg-black/50 flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in">
               <div className={`rounded-3xl p-6 w-full max-w-sm shadow-2xl ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
                   <div className="flex justify-center mb-4"><div className="bg-amber-100 p-4 rounded-full text-amber-600"><AlertTriangle size={32}/></div></div>
-                  <h3 className={`text-xl font-bold text-center mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Aviso de Orçamento</h3>
+                  <h3 className={`text-xl font-bold text-center mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Atenção</h3>
                   <div className="space-y-2 mb-6">
                       {alertMessages.map((msg, idx) => (<p key={idx} className={`text-sm text-center p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-300' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>{msg}</p>))}
                   </div>
@@ -1062,7 +1058,7 @@ export default function App() {
     let inc = 0, exp = 0;
     filteredTransactions.forEach(t => {
         if(t.type === 'Entrada') inc += t.amount;
-        else exp += t.amount; // Despesa ou Investimento conta como saída
+        else exp += t.amount;
     });
     return { income: inc, expenses: exp, balance: inc - exp };
   }, [filteredTransactions]);
@@ -1084,16 +1080,50 @@ export default function App() {
     setScreen(AppScreen.Home);
   };
 
+  const transferBalance = async (balance: number) => {
+      if(!user) return;
+      if(balance <= 0) return alert("Não há saldo positivo para transferir.");
+      
+      const batch = writeBatch(db);
+      const transferId = generateId();
+      
+      // 1. Criar Despesa no Mês Atual (Zerar o Saldo)
+      // Data: Último dia do mês atual
+      const lastDayCurrent = new Date(currentYear, currentMonthIdx + 1, 0); 
+      const t1Id = generateId();
+      batch.set(doc(db, `users/${user.uid}/transactions`, t1Id), {
+          id: t1Id, description: 'Transferência para Mês Seguinte', amount: balance, type: 'Saída', category: 'Transferência',
+          date: lastDayCurrent.toISOString().split('T')[0], month: selectedMonthKey, paymentMethod: 'Dinheiro', transferId
+      });
+
+      // 2. Criar Receita no Mês Seguinte
+      // Data: Primeiro dia do mês seguinte
+      const firstDayNext = new Date(currentYear, currentMonthIdx + 1, 1);
+      const t2Id = generateId();
+      batch.set(doc(db, `users/${user.uid}/transactions`, t2Id), {
+          id: t2Id, description: 'Sobra do Mês Anterior', amount: balance, type: 'Entrada', category: 'Saldo Anterior',
+          date: firstDayNext.toISOString().split('T')[0], month: getMonthKey(firstDayNext), paymentMethod: 'Dinheiro', transferId
+      });
+
+      await batch.commit();
+      alert("Saldo transferido com sucesso!");
+  };
+
   const rewriteTransaction = async (oldT: Transaction, newData: any, isSimpleUpdate = false) => {
      if(!user) return;
      const batch = writeBatch(db);
      if (isSimpleUpdate) { batch.update(doc(db, `users/${user.uid}/transactions`, oldT.id), newData); await batch.commit(); return; }
-     if (oldT.parentId) {
+     
+     if (oldT.transferId) { // Se for transferência, apaga o par
+         const pair = rawTransactions.filter(t => t.transferId === oldT.transferId);
+         pair.forEach(p => batch.delete(doc(db, `users/${user.uid}/transactions`, p.id)));
+     } else if (oldT.parentId) {
         const siblings = rawTransactions.filter(rt => rt.parentId === oldT.parentId);
         siblings.forEach(s => batch.delete(doc(db, `users/${user.uid}/transactions`, s.id)));
      } else {
         batch.delete(doc(db, `users/${user.uid}/transactions`, oldT.id));
      }
+
      if (newData.paymentMethod === 'Cartão' && newData.installments > 1) {
         const parentId = generateId();
         const baseDate = new Date(newData.date);
@@ -1136,7 +1166,10 @@ export default function App() {
   const deleteTransaction = async (t: Transaction) => {
     if(!user) return;
     const batch = writeBatch(db);
-    if (t.installment && t.parentId) {
+    if (t.transferId) { // Deleta o par de transferência
+       const pair = rawTransactions.filter(tr => tr.transferId === t.transferId);
+       pair.forEach(p => batch.delete(doc(db, `users/${user.uid}/transactions`, p.id)));
+    } else if (t.installment && t.parentId) {
        const allInstallments = rawTransactions.filter(rt => rt.parentId === t.parentId);
        allInstallments.forEach(inst => { batch.delete(doc(db, `users/${user.uid}/transactions`, inst.id)); });
     } else {
@@ -1218,7 +1251,7 @@ export default function App() {
       )}
 
       <div className="flex-1 overflow-y-auto pt-4 scrollbar-hide">
-        {screen === AppScreen.Home && <Home transactions={filteredTransactions} monthDetails={monthDetails} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'home'})} darkMode={isDark} />}
+        {screen === AppScreen.Home && <Home transactions={filteredTransactions} monthDetails={monthDetails} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'home'})} onTransferBalance={transferBalance} darkMode={isDark} />}
         {screen === AppScreen.Reports && <Reports transactions={filteredTransactions} categories={categories} darkMode={isDark} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'reports'})} />}
         {screen === AppScreen.Cards && <CardsScreen cards={cards} transactions={rawTransactions} currentMonthKey={selectedMonthKey} onSaveCard={saveCard} onDeleteCard={deleteCard} darkMode={isDark} />}
         {screen === AppScreen.Profile && <Profile user={user} categories={categories} settings={settings} transactions={rawTransactions} onUpdateSettings={updateSettings} onAddCategory={(c:string)=>updateCategories([...categories,c])} onDeleteCategory={(c:string)=>updateCategories(categories.filter(x=>x!==c))} onLogout={()=>signOut(auth)} monthlySavings={monthDetails.balance} darkMode={isDark} />}
@@ -1241,7 +1274,7 @@ export default function App() {
           transaction={editingTransaction.data} 
           mode={editingTransaction.mode}
           categories={categories}
-          settings={settings} // Passando settings para ter acesso a categorias personalizadas
+          settings={settings}
           cards={cards}
           darkMode={isDark}
           onClose={() => setEditingTransaction(null)}
