@@ -92,12 +92,7 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, onTransferBalan
       <div className={`rounded-[32px] p-6 relative overflow-hidden transition-colors ${darkMode ? 'bg-emerald-900 text-white shadow-none' : 'bg-emerald-600 text-white shadow-xl shadow-emerald-100/50'}`}>
         <div className="absolute top-0 right-0 p-4 opacity-10"><Wallet size={120} /></div>
         <p className="text-emerald-100 font-medium mb-1 text-sm">Saldo em Conta</p>
-        
-        {/* CORREÇÃO: Saldo fica vermelho se negativo */}
-        <h1 className={`text-4xl font-bold mb-8 ${monthDetails.balance < 0 ? 'text-rose-300' : ''}`}>
-            {formatCurrency(monthDetails.balance)}
-        </h1>
-
+        <h1 className="text-4xl font-bold mb-8">{formatCurrency(monthDetails.balance)}</h1>
         <div className="flex gap-4">
           <div className="flex items-center gap-3 bg-black/20 px-3 py-3 rounded-2xl flex-1 backdrop-blur-sm min-w-0">
             <div className="p-1.5 bg-emerald-400/20 rounded-full shrink-0"><ArrowUpCircle size={18} className="text-emerald-200"/></div>
@@ -126,7 +121,6 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, onTransferBalan
         <h2 className={`text-lg font-bold mb-4 px-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Histórico (Últimos 5)</h2>
         <div className="space-y-3">
           {transactions.slice(0, 5).map((t: Transaction) => {
-             // CORREÇÃO: Mostra valor da parcela
              const displayAmount = t.amount; 
              
              let iconColor = t.type === 'Entrada' ? (darkMode ? 'text-emerald-400 bg-emerald-900/50' : 'text-emerald-600 bg-emerald-100') : (darkMode ? 'text-rose-400 bg-rose-900/50' : 'text-rose-600 bg-rose-50');
@@ -173,7 +167,7 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, onTransferBalan
   );
 };
 
-// --- TELA: RELATÓRIOS ---
+// --- TELA: RELATÓRIOS (CORRIGIDA - SALDO INICIAL E PORCENTAGEM) ---
 const Reports = ({ transactions, categories, settings, darkMode, onSelectTransaction }: any) => {
   const [filterType, setFilterType] = useState<'Tudo' | 'Saída' | 'Entrada' | 'Investimento'>('Tudo');
   const [filterCat, setFilterCat] = useState('Todas');
@@ -251,7 +245,7 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
 
         if (filterType === 'Tudo') {
             if (selected.name === 'Receitas') {
-                percentBase = selected.value; // 100%
+                percentBase = selected.value;
                 suffix = " das Entradas";
             } else {
                 percentBase = totalIncome;
@@ -261,9 +255,16 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
             percentBase = chartData.reduce((acc, curr) => acc + curr.value, 0);
             suffix = " do Total";
         }
-        
+
         const percent = percentBase > 0 ? ((selected.value / percentBase) * 100).toFixed(1) : '0';
-        return { chartData, centerValue: selected.value, centerLabel: selected.name, centerSubtext: `${percent}%${suffix}`, centerColor: selected.color };
+        
+        return { 
+            chartData, 
+            centerValue: selected.value, 
+            centerLabel: selected.name, 
+            centerSubtext: `${percent}%${suffix}`, 
+            centerColor: selected.color 
+        };
     }
 
     return { chartData, centerValue, centerLabel, centerSubtext, centerColor };
@@ -271,6 +272,7 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
 
   const detailedList = useMemo(() => {
     let list = transactions.filter((t:any) => t.category !== 'Saldo Inicial' && !t.description.includes('Saldo Inicial'));
+    
     if (filterType !== 'Tudo') {
         list = list.filter((t:any) => t.type === filterType);
         if (filterCat !== 'Todas') {
@@ -310,13 +312,15 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
                 onChange={e=>setFilterCat(e.target.value)} 
                 disabled={filterType === 'Tudo'}
                 className={`px-4 py-2 rounded-xl border text-sm font-bold outline-none appearance-none pr-8 ${
-                    filterType === 'Tudo' ? 'opacity-50' : ''
+                    filterType === 'Tudo' 
+                    ? (darkMode ? 'bg-gray-800/50 border-gray-700 text-gray-500' : 'bg-gray-100 border-gray-200 text-gray-400') 
+                    : (darkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-600')
                 }`}
             >
                 <option value="Todas">Todas as Categorias</option>
                 {availableCategories.map((c:string) => <option key={c} value={c}>{c}</option>)}
             </select>
-            <ChevronDown size={14} className="absolute right-3 top-3 pointer-events-none text-gray-400" />
+            <ChevronDown size={14} className={`absolute right-3 top-3 pointer-events-none ${filterType === 'Tudo' ? 'text-gray-500' : 'text-gray-400'}`} />
          </div>
       </div>
 
@@ -324,42 +328,80 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie 
-                data={reportData.chartData} cx="50%" cy="50%" innerRadius={70} outerRadius={90} paddingAngle={5} 
-                dataKey="value" onClick={onPieClick} style={{ outline: 'none' }}
+                data={reportData.chartData} 
+                cx="50%" cy="50%" 
+                innerRadius={70} 
+                outerRadius={90} 
+                paddingAngle={5} 
+                dataKey="value"
+                onClick={onPieClick}
+                style={{ outline: 'none' }}
             >
               {reportData.chartData.map((entry:any, index:number) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} strokeWidth={0} style={{ outline: 'none' }} opacity={activeIndex === null || activeIndex === index ? 1 : 0.3} />
+                  <Cell 
+                    key={`cell-${index}`} 
+                    fill={entry.color} 
+                    strokeWidth={0} 
+                    style={{ outline: 'none' }}
+                    opacity={activeIndex === null || activeIndex === index ? 1 : 0.3} 
+                  />
               ))}
             </Pie>
           </PieChart>
         </ResponsiveContainer>
+        
         <div className="text-center absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none" style={{ width: '80%' }}>
           <p className="text-[10px] uppercase font-bold text-gray-400 mb-1">{reportData.centerLabel}</p>
-          <p className="text-xl font-bold truncate" style={{ color: reportData.centerColor }}>{formatCurrency(reportData.centerValue)}</p>
-          {reportData.centerSubtext && <p className={`text-sm font-bold mt-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{reportData.centerSubtext}</p>}
+          <p className="text-xl font-bold truncate" style={{ color: reportData.centerColor }}>
+            {formatCurrency(reportData.centerValue)}
+          </p>
+          {reportData.centerSubtext && (
+              <p className={`text-sm font-bold mt-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                {reportData.centerSubtext}
+              </p>
+          )}
         </div>
-        {activeIndex === null && <p className="absolute bottom-4 left-0 right-0 text-center text-[10px] text-gray-400 opacity-50">Toque no gráfico para detalhes</p>}
+        {activeIndex === null && (
+            <p className="absolute bottom-4 left-0 right-0 text-center text-[10px] text-gray-400 opacity-50">
+                Toque no gráfico para detalhes
+            </p>
+        )}
       </div>
 
       <div className="flex items-center gap-2 mb-3">
          <List size={18} className="text-gray-400"/>
          <h3 className={`font-bold text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Extrato Detalhado</h3>
       </div>
+      
       <div className="space-y-2">
         {detailedList.map((t: Transaction) => {
           const isIncome = t.type === 'Entrada';
           const isInvest = t.type === 'Investimento';
-          const iconColor = isIncome ? (darkMode ? 'text-emerald-400 bg-emerald-900/50' : 'text-emerald-600 bg-emerald-100') : (isInvest ? (darkMode ? 'text-indigo-400 bg-indigo-900/50' : 'text-indigo-600 bg-indigo-100') : (darkMode ? 'text-rose-400 bg-rose-900/50' : 'text-rose-600 bg-rose-50'));
+          
+          const iconColor = isIncome 
+            ? (darkMode ? 'text-emerald-400 bg-emerald-900/50' : 'text-emerald-600 bg-emerald-100') 
+            : (isInvest 
+                ? (darkMode ? 'text-indigo-400 bg-indigo-900/50' : 'text-indigo-600 bg-indigo-100') 
+                : (darkMode ? 'text-rose-400 bg-rose-900/50' : 'text-rose-600 bg-rose-50')
+              );
           const icon = isIncome ? <ArrowUpCircle size={16}/> : (isInvest ? <TrendingUp size={16}/> : <ArrowDownCircle size={16}/>);
           const amountColor = isIncome ? 'text-emerald-500' : (isInvest ? 'text-indigo-500' : 'text-rose-500');
 
           return (
             <div onClick={() => onSelectTransaction(t, 'reports')} key={t.id} className={`flex justify-between items-center p-4 rounded-xl border cursor-pointer active:opacity-70 ${darkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-750' : 'bg-white border-gray-50 hover:bg-gray-50'}`}>
                 <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-full ${iconColor}`}>{icon}</div>
-                    <div><p className={`font-bold text-sm ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>{t.description}</p><p className="text-xs text-gray-400">{t.category} • {formatDate(t.date)}</p></div>
+                    <div className={`p-2 rounded-full ${iconColor}`}>
+                        {icon}
+                    </div>
+                    <div>
+                        <p className={`font-bold text-sm ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>{t.description}</p>
+                        <p className="text-xs text-gray-400">{t.category} • {formatDate(t.date)}</p>
+                    </div>
                 </div>
-                <div className="text-right"><span className={`font-bold text-sm ${amountColor}`}>{isIncome ? '+' : '-'}{formatCurrency(t.amount)}</span></div>
+                <div className="text-right">
+                    <span className={`font-bold text-sm ${amountColor}`}>{isIncome ? '+' : '-'}{formatCurrency(t.amount)}</span>
+                    {t.installment && <p className="text-[10px] text-blue-500 font-bold">Parcela {t.installment.current}/{t.installment.total}</p>}
+                </div>
             </div>
           );
         })}
@@ -368,64 +410,111 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
   );
 };
 
-// --- MODAL DE EDIÇÃO (CORRIGIDO: ALTERAR CARTÃO E PARCELAS) ---
+// --- MODAL DE EDIÇÃO ---
 const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticipate, onDelete, settings, cards, darkMode }: any) => {
   const [desc, setDesc] = useState(transaction.description);
   const [cat, setCat] = useState(transaction.category);
   const [date, setDate] = useState(transaction.date);
+  
   const [amount, setAmount] = useState(transaction.amount); 
   const [paymentMethod, setPaymentMethod] = useState<'Dinheiro'|'Cartão'>(transaction.paymentMethod);
   const [selectedCard, setSelectedCard] = useState(transaction.cardId || cards[0]?.id || '');
   const [installments, setInstallments] = useState(transaction.installment?.total || 1);
 
-  const currentCategories = transaction.type === 'Entrada' ? (settings.incomeCategories || DEFAULT_INCOME_CATS) : (transaction.type === 'Investimento' ? (settings.investmentCategories || DEFAULT_INVEST_CATS) : (settings.expenseCategories || DEFAULT_EXPENSE_CATS));
+  const currentCategories = transaction.type === 'Entrada' 
+    ? (settings.incomeCategories || DEFAULT_INCOME_CATS)
+    : (transaction.type === 'Investimento' ? (settings.investmentCategories || DEFAULT_INVEST_CATS) : (settings.expenseCategories || DEFAULT_EXPENSE_CATS));
 
-  useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = 'auto'; }; }, []);
-  useEffect(() => { if (transaction.installment) setAmount(transaction.amount); else setAmount(transaction.amount); }, [transaction]);
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = 'auto'; };
+  }, []);
+
+  useEffect(() => {
+     if (transaction.installment) {
+         setAmount(transaction.amount); 
+     } else {
+         setAmount(transaction.amount);
+     }
+  }, [transaction]);
 
   const handleSave = () => {
     const finalAmount = Number(amount);
-    // Lógica para detectar mudança estrutural
+    
+    // Lógica simplificada de edição
     onRewrite(transaction, { 
-        description: desc, amount: finalAmount, category: cat, date, paymentMethod, 
-        cardId: paymentMethod === 'Cartão' ? selectedCard : null, 
-        installments: paymentMethod === 'Cartão' ? installments : 1
+        description: desc, 
+        amount: finalAmount, 
+        category: cat, 
+        date: date, 
+        paymentMethod, 
+        cardId: paymentMethod === 'Cartão' ? selectedCard : null 
     }, true);
     onClose();
   };
 
-  const handleAnticipateClick = () => { if(confirm('Deseja ANTECIPAR todas as parcelas futuras?')) { onAnticipate(transaction); onClose(); } };
-  const handleDeleteAll = () => { if(confirm('Deseja realmente excluir este registro?')) { onDelete(transaction); onClose(); } };
+  const handleAnticipateClick = () => {
+      if(confirm('Deseja ANTECIPAR todas as parcelas futuras?')) { onAnticipate(transaction); onClose(); }
+  };
+
+  const handleDeleteAll = () => {
+      if(confirm('Deseja realmente excluir este registro?')) { onDelete(transaction); onClose(); }
+  };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-       <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl overflow-y-auto max-h-[90dvh] ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
-          <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg">Editar Detalhes</h3><button onClick={onClose}><X size={20} className="text-gray-400"/></button></div>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" style={{touchAction: 'none'}}>
+       <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl overflow-y-auto max-h-[90dvh] ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`} style={{touchAction: 'pan-y'}}>
+          <div className="flex justify-between items-center mb-6">
+             <h3 className="font-bold text-lg">Editar Detalhes</h3>
+             <button onClick={onClose}><X size={20} className="text-gray-400"/></button>
+          </div>
+          
           <div className="space-y-4">
-             <div><label className="text-[10px] font-bold text-gray-400 uppercase">Valor da Parcela/Total</label><input type="number" value={amount} onChange={e=>setAmount(Number(e.target.value))} className={`w-full p-3 rounded-xl border font-bold text-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`} /></div>
+             <div>
+               <label className="text-[10px] font-bold text-gray-400 uppercase">Valor</label>
+               <input type="number" value={amount} onChange={e=>setAmount(e.target.value)} className={`w-full p-3 rounded-xl border font-bold text-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`} />
+             </div>
              
              {!transaction.transferId && (
-               <>
-                 <div><label className="text-[10px] font-bold text-gray-400 uppercase">Pagamento</label><div className="flex gap-2 mt-1"><button onClick={()=>setPaymentMethod('Dinheiro')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${paymentMethod==='Dinheiro' ? 'bg-emerald-100 border-emerald-500 text-emerald-700' : 'border-gray-200 text-gray-400'}`}>Dinheiro</button><button onClick={()=>setPaymentMethod('Cartão')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${paymentMethod==='Cartão' ? 'bg-emerald-100 border-emerald-500 text-emerald-700' : 'border-gray-200 text-gray-400'}`}>Cartão</button></div></div>
-                 
-                 {/* CORREÇÃO: Seletores de Cartão e Parcela */}
-                 {paymentMethod === 'Cartão' && (
-                     <div className="flex gap-2 animate-in fade-in">
-                        <div className="flex-1"><label className="text-[10px] font-bold text-gray-400 uppercase">Cartão</label><select value={selectedCard} onChange={e=>setSelectedCard(e.target.value)} className={`w-full p-2 rounded-xl border text-sm ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`}>{cards.map((c:any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
-                        <div className="w-24"><label className="text-[10px] font-bold text-gray-400 uppercase">Parcelas</label><select value={installments} onChange={e=>setInstallments(Number(e.target.value))} className={`w-full p-2 rounded-xl border text-sm ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`}>{[1,2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n}x</option>)}</select></div>
-                     </div>
-                 )}
-               </>
+                 <>
+                    <div>
+                        <label className="text-[10px] font-bold text-gray-400 uppercase">Pagamento</label>
+                        <div className="flex gap-2 mt-1">
+                            <button onClick={()=>setPaymentMethod('Dinheiro')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${paymentMethod==='Dinheiro' ? 'bg-emerald-100 border-emerald-500 text-emerald-700' : 'border-gray-200 text-gray-400'}`}>Dinheiro/Pix</button>
+                            <button onClick={()=>setPaymentMethod('Cartão')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${paymentMethod==='Cartão' ? 'bg-emerald-100 border-emerald-500 text-emerald-700' : 'border-gray-200 text-gray-400'}`}>Cartão</button>
+                        </div>
+                    </div>
+                 </>
              )}
-             
-             <div><label className="text-[10px] font-bold text-gray-400 uppercase">Categoria</label><select value={cat} onChange={e=>setCat(e.target.value)} className={`w-full p-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600' : ''}`}>{currentCategories.map((c: string) => <option key={c} value={c}>{c}</option>)}</select></div>
-             <div><label className="text-[10px] font-bold text-gray-400 uppercase">Descrição</label><input value={desc} onChange={e=>setDesc(e.target.value)} className={`w-full p-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600' : ''}`} /></div>
-             <div><label className="text-[10px] font-bold text-gray-400 uppercase">Data</label><input type="date" value={date} onChange={e=>setDate(e.target.value)} className={`w-full p-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600' : ''}`} /></div>
+
+             <div>
+               <label className="text-[10px] font-bold text-gray-400 uppercase">Categoria</label>
+               <select value={cat} onChange={e=>setCat(e.target.value)} className={`w-full p-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}>
+                  {currentCategories.map((c: string) => <option key={c} value={c}>{c}</option>)}
+               </select>
+             </div>
+             <div>
+               <label className="text-[10px] font-bold text-gray-400 uppercase">Descrição</label>
+               <input value={desc} onChange={e=>setDesc(e.target.value)} className={`w-full p-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`} />
+             </div>
+             <div>
+               <label className="text-[10px] font-bold text-gray-400 uppercase">Data</label>
+               <input type="date" value={date} onChange={e=>setDate(e.target.value)} className={`w-full p-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`} />
+             </div>
           </div>
+
           <div className="flex flex-col gap-3 mt-8">
-             <button onClick={handleSave} className="w-full py-4 bg-emerald-600 text-white font-bold rounded-xl">Salvar Alterações</button>
-             {transaction.installment && <button onClick={handleAnticipateClick} className="w-full py-3 bg-indigo-50 text-indigo-600 font-bold rounded-xl">Antecipar Parcelas</button>}
-             <button onClick={() => onDelete(transaction)} className="w-full py-3 bg-rose-50 text-rose-500 font-bold rounded-xl">Excluir</button>
+             <button onClick={handleSave} className={`w-full py-4 font-bold rounded-xl ${darkMode ? 'bg-emerald-600 text-white shadow-none' : 'bg-emerald-600 text-white shadow-lg shadow-emerald-100/50'}`}>Salvar Alterações</button>
+             
+             {transaction.installment && transaction.installment.current < transaction.installment.total && (
+                 <button onClick={handleAnticipateClick} className="w-full py-3 bg-indigo-50 text-indigo-600 border border-indigo-100 font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-indigo-100">
+                    <Zap size={18}/> Antecipar Parcelas Restantes
+                 </button>
+             )}
+
+             <button onClick={handleDeleteAll} className="w-full py-3 bg-rose-50 text-rose-500 font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-rose-100">
+                <Trash2 size={18}/> Excluir Registro
+             </button>
           </div>
        </div>
     </div>
@@ -442,13 +531,16 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
   const [editClosing, setEditClosing] = useState('');
   const [editDue, setEditDue] = useState('');
 
+  // Helper para somar fatura
   const getInvoiceTotal = (cardId: string, monthKey: string) => {
-    return transactions.filter((t: Transaction) => t.cardId === cardId && t.month === monthKey && t.type === 'Saída').reduce((acc: number, t: Transaction) => acc + t.amount, 0);
+    return transactions
+      .filter((t: Transaction) => t.cardId === cardId && t.month === monthKey && t.type === 'Saída')
+      .reduce((acc: number, t: Transaction) => acc + t.amount, 0);
   };
 
   const activeCard = cards.find((c: CardData) => c.id === selectedCardId);
 
-  // Lista de transações da fatura atual (Para ver detalhes)
+  // Lista de transações da fatura atual
   const currentInvoiceList = useMemo(() => {
       if (!selectedCardId) return [];
       return transactions.filter((t: Transaction) => t.cardId === selectedCardId && t.month === currentMonthKey && t.type === 'Saída');
@@ -467,17 +559,27 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
 
   const saveEdit = () => {
     if(activeCard) {
-      onSaveCard({ ...activeCard, name: editName, holder: editHolder, limit: parseFloat(editLimit), closingDay: parseInt(editClosing), dueDay: parseInt(editDue) });
+      onSaveCard({ 
+          ...activeCard, 
+          name: editName, 
+          holder: editHolder,
+          limit: parseFloat(editLimit),
+          closingDay: parseInt(editClosing),
+          dueDay: parseInt(editDue)
+      });
       setIsEditing(false);
     }
   };
   
-  const confirmDeleteCard = () => { if(confirm('Tem certeza?')) onDeleteCard(activeCard.id); }
+  const confirmDeleteCard = () => {
+    if(confirm('Tem certeza? Isso apagará este cartão e todas as configurações dele.')) onDeleteCard(activeCard.id);
+  }
 
   if (selectedCardId && activeCard) {
     const currentInvoice = getInvoiceTotal(activeCard.id, currentMonthKey);
     const [y, mStr] = currentMonthKey.split('-');
-    
+    const monthName = MONTHS_FULL[parseInt(mStr) - 1];
+
     const futureInvoices = [1, 2, 3].map(offset => {
       const date = new Date(parseInt(y), parseInt(mStr) - 1 + offset, 1);
       const key = getMonthKey(date);
@@ -487,42 +589,106 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
 
     return (
        <div className={`p-4 pb-32 space-y-6 min-h-full ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
-         <div className="flex items-center justify-between"><button onClick={() => setSelectedCardId(null)} className="p-2"><ChevronLeft size={24}/></button><h2 className="font-bold text-lg text-white">{activeCard.name}</h2><button onClick={startEditing} className="p-2"><Edit2 size={20}/></button></div>
+         <div className="flex items-center justify-between">
+            <button onClick={() => setSelectedCardId(null)} className={`p-2 rounded-full ${darkMode ? 'hover:bg-gray-800 text-white' : 'hover:bg-white text-gray-600'}`}><ChevronLeft size={24}/></button>
+            <h2 className={`font-bold text-lg ${darkMode ? 'text-white' : 'text-gray-800'}`}>{activeCard.name} ({activeCard.holder})</h2>
+            <button onClick={startEditing} className={`p-2 rounded-full ${darkMode ? 'hover:bg-gray-800 text-white' : 'hover:bg-white text-gray-600'}`}><Edit2 size={20}/></button>
+         </div>
+
          {isEditing && (
-           <div className={`p-4 rounded-2xl shadow-lg border space-y-3 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-              <h3 className="font-bold text-sm text-white">Editar Cartão</h3>
-              <div><label className="text-[10px] font-bold text-gray-400">Nome</label><input value={editName} onChange={e=>setEditName(e.target.value)} className="w-full p-2 rounded border bg-transparent text-white"/></div>
-              <div><label className="text-[10px] font-bold text-gray-400">Titular</label><input value={editHolder} onChange={e=>setEditHolder(e.target.value)} className="w-full p-2 rounded border bg-transparent text-white"/></div>
-              <div className="flex gap-2">
-                  <div className="flex-1"><label className="text-[10px] font-bold text-gray-400">Limite</label><input type="number" value={editLimit} onChange={e=>setEditLimit(e.target.value)} className="w-full p-2 rounded border bg-transparent text-white"/></div>
-                  <div className="w-20"><label className="text-[10px] font-bold text-gray-400">Fech.</label><input type="number" value={editClosing} onChange={e=>setEditClosing(e.target.value)} className="w-full p-2 rounded border bg-transparent text-white"/></div>
-                  <div className="w-20"><label className="text-[10px] font-bold text-gray-400">Venc.</label><input type="number" value={editDue} onChange={e=>setEditDue(e.target.value)} className="w-full p-2 rounded border bg-transparent text-white"/></div>
+           <div className={`p-4 rounded-2xl shadow-lg border space-y-3 animate-in fade-in ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+              <h3 className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Editar Cartão</h3>
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Nome do Cartão</label>
+                <input value={editName} onChange={e=>setEditName(e.target.value)} className={`w-full p-2 border rounded-lg text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200'}`}/>
               </div>
-              <div className="flex gap-2 mt-2"><button onClick={() => setIsEditing(false)} className="flex-1 py-2 text-gray-500 text-xs">Cancelar</button><button onClick={saveEdit} className="flex-1 py-2 bg-emerald-600 text-white rounded text-xs">Salvar</button></div>
-              <button onClick={confirmDeleteCard} className="w-full py-2 bg-rose-50 text-rose-500 rounded text-xs mt-2 border border-rose-100">Excluir Cartão</button>
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Titular (Nome)</label>
+                <input value={editHolder} onChange={e=>setEditHolder(e.target.value)} className={`w-full p-2 border rounded-lg text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200'}`}/>
+              </div>
+              <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Limite</label>
+                    <input type="number" value={editLimit} onChange={e=>setEditLimit(e.target.value)} className={`w-full p-2 border rounded-lg text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200'}`}/>
+                  </div>
+                  <div className="w-20">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Fech.</label>
+                    <input type="number" value={editClosing} onChange={e=>setEditClosing(e.target.value)} className={`w-full p-2 border rounded-lg text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200'}`}/>
+                  </div>
+                  <div className="w-20">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Venc.</label>
+                    <input type="number" value={editDue} onChange={e=>setEditDue(e.target.value)} className={`w-full p-2 border rounded-lg text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200'}`}/>
+                  </div>
+              </div>
+              <div className="flex gap-2 mt-2">
+                <button onClick={() => setIsEditing(false)} className="flex-1 py-2 text-gray-500 font-bold text-xs">Cancelar</button>
+                <button onClick={saveEdit} className="flex-1 py-2 bg-emerald-600 text-white rounded-lg font-bold text-xs">Salvar</button>
+              </div>
+              <button onClick={confirmDeleteCard} className="w-full py-2 bg-rose-50 text-rose-500 rounded-lg font-bold text-xs mt-2 border border-rose-100 hover:bg-rose-100">Excluir Cartão</button>
            </div>
          )}
+
          <div className={`rounded-[24px] p-6 shadow-sm border text-center ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-            <CreditCard size={18} className="text-emerald-500 mx-auto mb-2"/><h1 className={`text-4xl font-bold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>{formatCurrency(currentInvoice)}</h1><p className="text-xs text-gray-400">Total da Fatura</p>
-            <div className={`flex justify-between border-t pt-6 mt-4 ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
-                <div><p className="text-[10px] text-gray-400 uppercase font-bold">Fecha em</p><p className={`font-bold ${darkMode?'text-white':'text-gray-800'}`}>{activeCard.closingDay.toString().padStart(2,'0')}/{mStr}</p></div>
-                <div><p className="text-[10px] text-gray-400 uppercase font-bold text-rose-500">Vence em</p><p className="font-bold text-rose-500">{activeCard.dueDay.toString().padStart(2,'0')}/{mStr}</p></div>
+            <div className="flex items-center gap-2 mb-4">
+               <CreditCard size={18} className="text-emerald-500"/>
+               <span className="text-emerald-500 font-bold text-xs uppercase tracking-widest">FATURA — {monthName.toUpperCase()}</span>
+            </div>
+            <h1 className={`text-4xl font-bold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>{formatCurrency(currentInvoice)}</h1>
+            <p className="text-xs text-gray-400 mb-8">Total da Fatura</p>
+
+            <div className={`flex justify-between border-t pt-6 ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">Fecha em</p>
+                  <p className={`font-bold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{activeCard.closingDay.toString().padStart(2,'0')}/{mStr}</p>
+                </div>
+                <div className={`w-px mx-4 ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}></div>
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase font-bold mb-1 text-rose-500">Vence em</p>
+                  <p className="font-bold text-rose-500">{activeCard.dueDay.toString().padStart(2,'0')}/{mStr}</p>
+                </div>
             </div>
          </div>
-         
-         {/* LISTA DE TRANSAÇÕES DA FATURA */}
+
+         {/* --- NOVA SEÇÃO: TRANSAÇÕES DA FATURA --- */}
          <div>
-            <h3 className={`font-bold mb-4 text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Transações da Fatura</h3>
+            <h3 className={`font-bold mb-4 text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Transações da Fatura</h3>
             <div className="space-y-2 mb-6">
-                {currentInvoiceList.length === 0 ? <p className="text-xs text-gray-400 text-center py-4">Nenhuma compra nesta fatura.</p> : currentInvoiceList.map((t: Transaction) => (
-                    <div onClick={() => onSelectTransaction(t, 'cards')} key={t.id} className={`flex justify-between items-center p-3 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-                        <div><p className={`text-xs font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{t.description}</p><p className="text-[10px] text-gray-400">{formatDate(t.date)} • {t.category}</p></div>
-                        <div className="text-right"><p className="text-xs font-bold text-rose-500">-{formatCurrency(t.amount)}</p>{t.installment && <p className="text-[9px] text-blue-400">{t.installment.current}/{t.installment.total}</p>}</div>
-                    </div>
-                ))}
+                {currentInvoiceList.length === 0 ? (
+                    <p className="text-xs text-gray-400">Nenhuma compra nesta fatura.</p>
+                ) : (
+                    currentInvoiceList.map((t: Transaction) => (
+                        <div onClick={() => onSelectTransaction(t, 'cards')} key={t.id} className={`flex justify-between items-center p-3 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+                            <div>
+                                <p className={`text-xs font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{t.description}</p>
+                                <p className="text-[10px] text-gray-400">{formatDate(t.date)} • {t.category}</p>
+                            </div>
+                            <div className="text-right">
+                                <p className={`text-xs font-bold text-rose-500`}>-{formatCurrency(t.amount)}</p>
+                                {t.installment && <p className="text-[9px] text-blue-400">{t.installment.current}/{t.installment.total}</p>}
+                            </div>
+                        </div>
+                    ))
+                )}
             </div>
          </div>
-         <div><h3 className={`font-bold mb-4 text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Próximas Faturas</h3><div className="space-y-3">{futureInvoices.map(inv => (<div key={inv.key} className={`flex justify-between items-center p-4 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}><span className="font-bold text-gray-500 uppercase text-xs">{inv.label}</span><span className={`font-bold ${inv.total > 0 ? (darkMode ? 'text-gray-200' : 'text-gray-800') : 'text-gray-300'}`}>{inv.total > 0 ? formatCurrency(inv.total) : '-'}</span></div>))}</div></div>
+
+         <div>
+            <h3 className={`font-bold mb-4 text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Próximas Faturas</h3>
+            <div className="space-y-3">
+               {futureInvoices.every(i => i.total === 0) ? (
+                 <div className={`border-2 border-dashed rounded-2xl p-6 text-center text-sm ${darkMode ? 'border-gray-700 text-gray-500' : 'border-gray-200 text-gray-400'}`}>
+                   Nenhuma fatura futura prevista.
+                 </div>
+               ) : (
+                 futureInvoices.map(inv => (
+                   <div key={inv.key} className={`flex justify-between items-center p-4 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+                      <span className="font-bold text-gray-500 uppercase text-xs">{inv.label}</span>
+                      <span className={`font-bold ${inv.total > 0 ? (darkMode ? 'text-gray-200' : 'text-gray-800') : 'text-gray-300'}`}>{inv.total > 0 ? formatCurrency(inv.total) : '-'}</span>
+                   </div>
+                 ))
+               )}
+            </div>
+         </div>
        </div>
     );
   }
@@ -534,101 +700,166 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
         {cards.map((card: CardData) => {
            const invoice = getInvoiceTotal(card.id, currentMonthKey);
            const limitUsedPercent = Math.min((invoice / card.limit) * 100, 100);
+           
            return (
-             <div key={card.id} onClick={() => setSelectedCardId(card.id)} className={`rounded-2xl p-5 shadow-sm border border-l-4 cursor-pointer relative overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'} ${card.color || 'border-l-emerald-500'}`}>
+             <div key={card.id} onClick={() => setSelectedCardId(card.id)} 
+               className={`rounded-2xl p-5 shadow-sm border border-l-4 cursor-pointer hover:shadow-md transition-all relative overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'} ${card.color || 'border-l-emerald-500'}`}
+             >
                 <div className="flex justify-between items-start mb-6">
-                   <div className="flex items-center gap-3"><div className={`p-2 rounded-full ${darkMode ? 'bg-gray-700 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}><CreditCard size={20}/></div><div><h3 className={`font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>{card.name}</h3><p className="text-xs text-gray-400">{card.holder}</p></div></div>
-                   <div className="text-right"><p className="text-[10px] text-gray-400 uppercase font-bold">Fatura Atual</p><p className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{formatCurrency(invoice)}</p></div>
+                   <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-full ${darkMode ? 'bg-gray-700 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}><CreditCard size={20}/></div>
+                      <div>
+                        <h3 className={`font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>{card.name} ({card.holder})</h3>
+                        <p className="text-xs text-gray-400">{card.holder}</p>
+                      </div>
+                   </div>
+                   
+                   {/* NOVO: EXIBE O VALOR DA FATURA ATUAL NO CARD */}
+                   <div className="text-right">
+                       <p className="text-[10px] text-gray-400 uppercase font-bold">Fatura Atual</p>
+                       <p className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{formatCurrency(invoice)}</p>
+                   </div>
                 </div>
-                <div><div className="flex justify-between text-xs mb-1"><span className="text-gray-400">Limite Disponível</span><span className={`font-bold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{formatCurrency(card.limit - invoice)}</span></div><div className={`h-1.5 w-full rounded-full overflow-hidden ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}><div className="h-full bg-emerald-500 rounded-full" style={{width: `${100 - limitUsedPercent}%`}}></div></div></div>
+                <div>
+                   <div className="flex justify-between text-xs mb-1">
+                      <span className="text-gray-400">Limite Disponível</span>
+                      <span className={`font-bold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{formatCurrency(card.limit - invoice)}</span>
+                   </div>
+                   <div className={`h-1.5 w-full rounded-full overflow-hidden ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                      <div className="h-full bg-emerald-500 rounded-full" style={{width: `${100 - limitUsedPercent}%`}}></div>
+                   </div>
+                </div>
              </div>
            );
         })}
       </div>
-      <button onClick={() => onSaveCard({ id: generateId(), name: 'Novo Cartão', holder: 'Titular', limit: 1000, closingDay: 1, dueDay: 10, color: 'border-l-gray-500' })} className={`w-full py-4 border-2 border-dashed rounded-2xl font-bold transition-colors ${darkMode ? 'border-gray-700 text-gray-500' : 'border-gray-300 text-gray-400'}`}>+ Adicionar Novo Cartão</button>
+      <button onClick={() => onSaveCard({ id: generateId(), name: 'Novo Cartão', holder: 'Titular', limit: 1000, closingDay: 1, dueDay: 10, color: 'border-l-gray-500' })} 
+        className={`w-full py-4 border-2 border-dashed rounded-2xl font-bold transition-colors ${darkMode ? 'border-gray-700 text-gray-500 hover:border-emerald-500 hover:text-emerald-500' : 'border-gray-300 text-gray-400 hover:bg-gray-50 hover:border-emerald-500 hover:text-emerald-500'}`}>
+        + Adicionar Novo Cartão
+      </button>
     </div>
   );
 };
 
 // --- PERFIL ---
 const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, onDeleteCategory, onLogout, monthlySavings, transactions, darkMode, onAddInitialBalance }: any) => {
+  const [showCats, setShowCats] = useState(false);
+  const [showGoals, setShowGoals] = useState(false);
   const [showInvestments, setShowInvestments] = useState(false);
   const [isAddingBalance, setIsAddingBalance] = useState(false);
   const [balanceAmount, setBalanceAmount] = useState('');
   const [balanceCategory, setBalanceCategory] = useState('');
-  const [showCats, setShowCats] = useState(false);
-  const [showGoals, setShowGoals] = useState(false);
   const [newCat, setNewCat] = useState('');
-  const [newGoalName, setNewGoalName] = useState('');
-  const [newGoalAmount, setNewGoalAmount] = useState('');
   const [newInvestCat, setNewInvestCat] = useState('');
   const [isEditingIncome, setIsEditingIncome] = useState(false);
   const [tempIncome, setTempIncome] = useState(settings.monthlyIncome.toString());
+  const [newGoalName, setNewGoalName] = useState('');
+  const [newGoalAmount, setNewGoalAmount] = useState('');
 
   const investmentCats = settings.investmentCategories || DEFAULT_INVEST_CATS;
+
+  const handleSaveIncome = () => {
+    onUpdateSettings({...settings, monthlyIncome: parseFloat(tempIncome)});
+    setIsEditingIncome(false);
+  };
+  const handleAddGoal = () => {
+    if(!newGoalName || !newGoalAmount) return;
+    const newGoal: Goal = { id: generateId(), name: newGoalName, amount: parseFloat(newGoalAmount) };
+    const updatedGoals = settings.goals ? [...settings.goals, newGoal] : [newGoal];
+    onUpdateSettings({ ...settings, goals: updatedGoals });
+    setNewGoalName(''); setNewGoalAmount('');
+  };
+  const handleDeleteGoal = (id: string) => {
+    const updatedGoals = settings.goals.filter((g:Goal) => g.id !== id);
+    onUpdateSettings({ ...settings, goals: updatedGoals });
+  };
+  const handleAddInvestCat = () => {
+      if(!newInvestCat) return;
+      const currentList = settings.investmentCategories || DEFAULT_INVEST_CATS;
+      onUpdateSettings({ ...settings, investmentCategories: [...currentList, newInvestCat] });
+      setNewInvestCat('');
+  };
+  const handleDeleteInvestCat = (c: string) => {
+      const currentList = settings.investmentCategories || DEFAULT_INVEST_CATS;
+      onUpdateSettings({ ...settings, investmentCategories: currentList.filter((x:string) => x !== c) });
+  };
+  const confirmInitialBalance = () => {
+      if (!balanceAmount || !balanceCategory) return alert("Preencha valor e categoria.");
+      const amount = parseFloat(balanceAmount);
+      if (isNaN(amount) || amount <= 0) return alert("Valor inválido");
+      onAddInitialBalance(amount, balanceCategory);
+      setBalanceAmount('');
+      setBalanceCategory('');
+      setIsAddingBalance(false);
+  };
+  const updateCategoryLimit = (cat: string, limit: string) => {
+    const newLimits = { ...settings.categoryLimits, [cat]: parseFloat(limit) };
+    onUpdateSettings({ ...settings, categoryLimits: newLimits });
+  };
+  const toggleDarkMode = () => {
+    onUpdateSettings({ ...settings, darkMode: !settings.darkMode });
+  };
+  const totalGoals = settings.goals ? settings.goals.reduce((acc:number, g:Goal) => acc + g.amount, 0) : 0;
   const investmentsSummary = useMemo(() => {
       const investTransactions = transactions.filter((t:any) => t.type === 'Investimento');
       const map = new Map();
       investTransactions.forEach((t:any) => map.set(t.category, (map.get(t.category) || 0) + t.amount));
       return Array.from(map, ([name, value]) => ({ name, value }));
   }, [transactions]);
-  
-  const confirmInitialBalance = () => {
-      const amount = parseFloat(balanceAmount);
-      if (isNaN(amount) || amount <= 0) return alert("Valor inválido");
-      onAddInitialBalance(amount, balanceCategory || 'Saldo Inicial');
-      setBalanceAmount(''); setBalanceCategory(''); setIsAddingBalance(false);
-  };
-  const handleAddInvestCat = () => { if(newInvestCat) { onUpdateSettings({ ...settings, investmentCategories: [...investmentCats, newInvestCat] }); setNewInvestCat(''); } };
-  const handleDeleteInvestCat = (c: string) => { onUpdateSettings({ ...settings, investmentCategories: investmentCats.filter((x:string) => x !== c) }); };
-  const handleAddGoal = () => { if(newGoalName && newGoalAmount) { onUpdateSettings({ ...settings, goals: [...(settings.goals||[]), {id: generateId(), name: newGoalName, amount: parseFloat(newGoalAmount)}] }); setNewGoalName(''); setNewGoalAmount(''); } };
-  const handleDeleteGoal = (id: string) => { onUpdateSettings({ ...settings, goals: settings.goals.filter((g:Goal) => g.id !== id) }); };
-  const updateCategoryLimit = (cat: string, limit: string) => { onUpdateSettings({ ...settings, categoryLimits: { ...settings.categoryLimits, [cat]: parseFloat(limit) } }); };
 
   return (
     <div className="p-4 pb-32 space-y-6">
-      <div className="flex justify-between items-center"><h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>Perfil</h2><div onClick={() => onUpdateSettings({ ...settings, darkMode: !settings.darkMode })} className="p-2 bg-gray-100 rounded-full cursor-pointer">{darkMode ? <Sun size={20}/> : <Moon size={20}/>}</div></div>
-      <div className={`rounded-3xl p-6 text-white shadow-lg ${darkMode ? 'bg-emerald-900' : 'bg-emerald-500'}`}><DollarSign size={16} className="mb-2"/><h1 className="text-3xl font-bold">{formatCurrency(monthlySavings)}</h1><p className="text-[10px] opacity-80 mt-1 text-right">Economia Mensal</p></div>
+      <div className="flex justify-between items-center">
+         <h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>Perfil</h2>
+         <div onClick={toggleDarkMode} className={`p-2 rounded-full cursor-pointer transition-colors ${darkMode ? 'bg-gray-800 text-yellow-400' : 'bg-gray-100 text-gray-500'}`}>{darkMode ? <Sun size={20}/> : <Moon size={20}/>}</div>
+      </div>
+      <div className={`rounded-3xl p-6 text-white shadow-lg relative overflow-hidden ${darkMode ? 'bg-emerald-900' : 'bg-emerald-500'}`}>
+         <div className="absolute -right-4 -top-4 opacity-10"><DollarSign size={100}/></div>
+         <div className="flex items-center gap-2 mb-2 opacity-90"><DollarSign size={16}/> <span className="text-xs font-bold uppercase tracking-wider">Economia Mensal</span></div>
+         <h1 className="text-3xl font-bold mb-4">{formatCurrency(monthlySavings)}</h1>
+         <div className="h-1 bg-black/20 rounded-full w-full mb-1"><div className="bg-white h-full rounded-full" style={{width: `${Math.min((monthlySavings/settings.monthlyIncome)*100, 100)}%`}}></div></div>
+         <p className="text-[10px] text-emerald-100 text-right">de {formatCurrency(settings.monthlyIncome)} (Renda)</p>
+      </div>
+      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest px-2 mt-4">Configurações</p>
       <div className="space-y-3">
-         {/* Renda Mensal */}
          <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
             {isEditingIncome ? (
-              <div className="flex gap-2 items-center"><input autoFocus type="number" value={tempIncome} onChange={e=>setTempIncome(e.target.value)} className="w-full p-2 border rounded" /><button onClick={()=>{onUpdateSettings({...settings, monthlyIncome: parseFloat(tempIncome)}); setIsEditingIncome(false);}} className="p-2 bg-emerald-600 text-white rounded"><Check size={18}/></button></div>
+              <div className="flex gap-2 items-center"><input autoFocus type="number" value={tempIncome} onChange={e=>setTempIncome(e.target.value)} className={`w-full p-2 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`} /><button onClick={handleSaveIncome} className="bg-emerald-600 text-white p-2 rounded-lg"><Check size={18}/></button></div>
             ) : (
-              <div onClick={() => setIsEditingIncome(true)} className="flex items-center justify-between cursor-pointer"><div className="flex items-center gap-4"><div className="p-3 bg-blue-50 text-blue-600 rounded-full"><Wallet size={20}/></div><div><p className="font-bold text-sm">Renda Mensal</p><p className="text-xs text-gray-400">{formatCurrency(settings.monthlyIncome)}</p></div></div><Edit2 size={16} className="text-gray-300"/></div>
+              <div onClick={() => setIsEditingIncome(true)} className="flex items-center justify-between cursor-pointer"><div className="flex items-center gap-4"><div className={`p-3 rounded-full ${darkMode ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-50 text-blue-600'}`}><Wallet size={20}/></div><div><p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Renda Mensal</p><p className="text-xs text-gray-400">{formatCurrency(settings.monthlyIncome)}</p></div></div><Edit2 size={16} className="text-gray-300"/></div>
             )}
          </div>
-         {/* Metas */}
          <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-            <div onClick={() => setShowGoals(!showGoals)} className="p-4 flex items-center justify-between cursor-pointer"><div className="flex items-center gap-4"><div className="p-3 bg-amber-50 text-amber-600 rounded-full"><Target size={20}/></div><p className="font-bold text-sm">Minhas Metas</p></div><ChevronRight size={16} className={showGoals ? 'rotate-90' : ''}/></div>
-            {showGoals && <div className="px-4 pb-4 border-t space-y-3"><div className="flex gap-2 mt-3"><input placeholder="Nome" value={newGoalName} onChange={e=>setNewGoalName(e.target.value)} className="flex-1 p-2 border rounded"/><input placeholder="Valor" value={newGoalAmount} onChange={e=>setNewGoalAmount(e.target.value)} className="w-20 p-2 border rounded"/><button onClick={handleAddGoal} className="bg-emerald-600 text-white p-2 rounded"><Plus size={16}/></button></div>{settings.goals?.map((g:Goal)=><div key={g.id} className="flex justify-between p-2 border rounded"><span>{g.name}</span><div className="flex gap-2"><b>{formatCurrency(g.amount)}</b><button onClick={()=>handleDeleteGoal(g.id)}><Trash2 size={14}/></button></div></div>)}</div>}
-         </div>
-         {/* Investimentos */}
-         <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-            <div onClick={() => setShowInvestments(!showInvestments)} className="p-4 flex items-center justify-between cursor-pointer"><div className="flex items-center gap-4"><div className="p-3 bg-indigo-50 text-indigo-600 rounded-full"><TrendingUp size={20}/></div><p className="font-bold text-sm">Meus Investimentos</p></div><ChevronRight size={16} className={showInvestments ? 'rotate-90' : ''}/></div>
-            {showInvestments && (
-                <div className="px-4 pb-4 border-t space-y-3">
-                    {!isAddingBalance ? (
-                        <button onClick={() => setIsAddingBalance(true)} className="w-full py-3 bg-indigo-50 text-indigo-600 font-bold rounded-xl mt-3 text-xs">+ Adicionar Saldo Inicial (Informativo)</button>
-                    ) : (
-                        <div className="p-3 bg-gray-50 rounded-xl mt-3 space-y-2">
-                            <input type="number" placeholder="Valor" value={balanceAmount} onChange={e=>setBalanceAmount(e.target.value)} className="w-full p-2 border rounded text-black" />
-                            <select value={balanceCategory} onChange={e=>setBalanceCategory(e.target.value)} className="w-full p-2 border rounded text-black"><option value="">Selecione Categoria...</option>{investmentCats.map((c: string) => <option key={c} value={c}>{c}</option>)}</select>
-                            <div className="flex gap-2"><button onClick={()=>setIsAddingBalance(false)} className="flex-1 py-2 text-xs">Cancelar</button><button onClick={confirmInitialBalance} className="flex-1 py-2 bg-indigo-600 text-white rounded text-xs">Salvar</button></div>
-                        </div>
-                    )}
-                    <div className="flex gap-2 mt-3"><input placeholder="Nova Categoria" value={newInvestCat} onChange={e=>setNewInvestCat(e.target.value)} className="flex-1 p-2 border rounded"/><button onClick={handleAddInvestCat} className="bg-emerald-600 text-white p-2 rounded"><Plus size={16}/></button></div>
-                    <div className="space-y-2">{investmentCats.map((c: string) => { const total = investmentsSummary.find(i => i.name === c)?.value || 0; return (<div key={c} className="flex justify-between items-center p-2 rounded-lg border"><div><span className="block text-sm">{c}</span><span className="text-xs text-gray-400">{formatCurrency(total)}</span></div><button onClick={()=>handleDeleteInvestCat(c)}><Trash2 size={14}/></button></div>); })}</div>
+            <div onClick={() => setShowGoals(!showGoals)} className="p-4 flex items-center justify-between cursor-pointer"><div className="flex items-center gap-4"><div className={`p-3 rounded-full ${darkMode ? 'bg-amber-900/50 text-amber-400' : 'bg-amber-50 text-amber-600'}`}><Target size={20}/></div><div><p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Minhas Metas</p><p className="text-xs text-gray-400">Total: {formatCurrency(totalGoals)}</p></div></div><ChevronRight size={16} className={`text-gray-300 transition-transform ${showGoals ? 'rotate-90' : ''}`}/></div>
+            {showGoals && (
+                <div className={`px-4 pb-4 border-t animate-in slide-in-from-top-2 ${darkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50/50 border-gray-100'}`}>
+                    <div className="flex gap-2 mb-3 mt-3"><input placeholder="Nome (Ex: Viagem)" value={newGoalName} onChange={e=>setNewGoalName(e.target.value)} className={`flex-1 p-2 text-xs border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white'}`} /><input type="number" placeholder="Valor" value={newGoalAmount} onChange={e=>setNewGoalAmount(e.target.value)} className={`w-20 p-2 text-xs border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white'}`} /><button onClick={handleAddGoal} className="bg-emerald-600 text-white p-2 rounded-lg"><Plus size={16}/></button></div>
+                    <div className="space-y-2">{settings.goals && settings.goals.map((g:Goal) => (<div key={g.id} className={`flex justify-between items-center p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}><span className={`text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-700'}`}>{g.name}</span><div className="flex items-center gap-3"><span className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{formatCurrency(g.amount)}</span><button onClick={() => handleDeleteGoal(g.id)} className="text-gray-400 hover:text-rose-500"><Trash2 size={14}/></button></div></div>))}</div>
                 </div>
             )}
          </div>
-         {/* Limites */}
          <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-             <div onClick={() => setShowCats(!showCats)} className="p-4 flex items-center justify-between cursor-pointer"><div className="flex items-center gap-4"><div className="p-3 bg-rose-50 text-rose-600 rounded-full"><AlertCircle size={20}/></div><p className="font-bold text-sm">Limites de Despesas</p></div><ChevronRight size={16} className={showCats ? 'rotate-90' : ''}/></div>
-             {showCats && <div className="px-4 pb-4 border-t space-y-3"><div className="flex gap-2 mt-3"><input value={newCat} onChange={e=>setNewCat(e.target.value)} placeholder="Nova categoria..." className="flex-1 p-2 border rounded"/><button onClick={() => { if(newCat) { onAddCategory(newCat); setNewCat(''); }}} className="bg-emerald-600 text-white p-2 rounded"><Plus size={18}/></button></div><div className="space-y-2 max-h-60 overflow-y-auto pr-1">{categories.map((c:string) => (<div key={c} className="flex justify-between items-center text-sm p-3 rounded-lg border"><span>{c}</span><div className="flex items-center gap-2"><span className="text-[10px]">Limite:</span><input type="number" className="w-20 p-1 border rounded text-right text-xs" value={settings.categoryLimits?.[c] || ''} onChange={(e) => updateCategoryLimit(c, e.target.value)} /><button onClick={() => onDeleteCategory(c)}><Trash2 size={14}/></button></div></div>))}</div></div>}
+            <div onClick={() => setShowInvestments(!showInvestments)} className="p-4 flex items-center justify-between cursor-pointer"><div className="flex items-center gap-4"><div className={`p-3 rounded-full ${darkMode ? 'bg-indigo-900/50 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><TrendingUp size={20}/></div><div><p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Meus Investimentos</p><p className="text-xs text-gray-400">Gerenciar Categorias</p></div></div><ChevronRight size={16} className={`text-gray-300 transition-transform ${showInvestments ? 'rotate-90' : ''}`}/></div>
+            {showInvestments && (
+                <div className={`px-4 pb-4 border-t animate-in slide-in-from-top-2 ${darkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50/50 border-gray-100'}`}>
+                    {!isAddingBalance ? (
+                        <button onClick={() => setIsAddingBalance(true)} className="w-full mb-4 py-3 bg-indigo-50 text-indigo-600 border border-indigo-100 font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-indigo-100 text-xs mt-2">+ Adicionar Saldo Inicial</button>
+                    ) : (
+                        <div className={`p-3 rounded-xl mb-4 border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}><p className="text-xs font-bold mb-2 text-gray-400">Novo Saldo / Ajuste</p><div className="space-y-2"><input type="number" placeholder="Valor (Ex: 1000)" value={balanceAmount} onChange={e=>setBalanceAmount(e.target.value)} className={`w-full p-2 text-sm rounded border ${darkMode ? 'bg-gray-600 border-gray-500 text-white' : 'bg-white'}`} /><select value={balanceCategory} onChange={e=>setBalanceCategory(e.target.value)} className={`w-full p-2 text-sm rounded border ${darkMode ? 'bg-gray-600 border-gray-500 text-white' : 'bg-white'}`}><option value="">Selecione a Categoria...</option>{investmentCats.map((c: string) => <option key={c} value={c}>{c}</option>)}</select><div className="flex gap-2 pt-1"><button onClick={() => setIsAddingBalance(false)} className="flex-1 py-2 text-xs text-gray-500 font-bold">Cancelar</button><button onClick={confirmInitialBalance} className="flex-1 py-2 text-xs bg-indigo-600 text-white rounded font-bold">Salvar</button></div></div></div>
+                    )}
+                    <div className="flex gap-2 mb-3 mt-3"><input placeholder="Nova Categoria (Ex: Cripto)" value={newInvestCat} onChange={e=>setNewInvestCat(e.target.value)} className={`flex-1 p-2 text-xs border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white'}`} /><button onClick={handleAddInvestCat} className="bg-emerald-600 text-white p-2 rounded-lg"><Plus size={16}/></button></div>
+                    <div className="space-y-2">{investmentCats.map((c: string) => { const total = investmentsSummary.find(i => i.name === c)?.value || 0; return (<div key={c} className={`flex justify-between items-center p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}><div><span className={`text-sm font-medium block ${darkMode ? 'text-white' : 'text-gray-700'}`}>{c}</span><span className="text-[10px] text-gray-400">Acumulado: {formatCurrency(total)}</span></div><button onClick={() => handleDeleteInvestCat(c)} className="text-gray-400 hover:text-rose-500"><Trash2 size={14}/></button></div>); })}</div>
+                </div>
+            )}
+         </div>
+         <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+             <div onClick={() => setShowCats(!showCats)} className="p-4 flex items-center justify-between cursor-pointer"><div className="flex items-center gap-4"><div className={`p-3 rounded-full ${darkMode ? 'bg-rose-900/50 text-rose-400' : 'bg-rose-50 text-rose-600'}`}><AlertCircle size={20}/></div><div><p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Limites de Despesas</p><p className="text-xs text-gray-400">{categories.length} categorias</p></div></div><ChevronRight size={16} className={`text-gray-300 transition-transform ${showCats ? 'rotate-90' : ''}`}/></div>
+             {showCats && (
+               <div className={`px-4 pb-4 border-t animate-in slide-in-from-top-2 ${darkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50/50 border-gray-100'}`}><div className="flex gap-2 mb-3 mt-3"><input value={newCat} onChange={e=>setNewCat(e.target.value)} placeholder="Nova categoria..." className={`flex-1 p-2 rounded-lg border text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white'}`}/><button onClick={() => { if(newCat) { onAddCategory(newCat); setNewCat(''); }}} className="bg-emerald-600 text-white p-2 rounded-lg"><Plus size={18}/></button></div><div className="space-y-2 max-h-60 overflow-y-auto pr-1">{categories.map((c:string) => (<div key={c} className={`flex justify-between items-center text-sm p-3 rounded-lg border shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}><span className={`font-bold ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>{c}</span><div className="flex items-center gap-2"><span className="text-[10px] text-gray-400 uppercase font-bold">Limite:</span><input type="number" placeholder="R$ 0" className={`w-20 p-1 border rounded text-right text-xs ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`} value={settings.categoryLimits?.[c] || ''} onChange={(e) => updateCategoryLimit(c, e.target.value)} /><button onClick={() => onDeleteCategory(c)} className="text-gray-300 hover:text-rose-500 ml-1"><Trash2 size={14}/></button></div></div>))}</div></div>
+             )}
          </div>
       </div>
-      <button onClick={onLogout} className="w-full py-4 text-rose-500 font-bold bg-rose-50 rounded-2xl">Sair</button>
+      <button onClick={onLogout} className={`w-full py-4 font-bold rounded-2xl flex items-center justify-center gap-2 transition-colors mt-6 ${darkMode ? 'text-rose-400 bg-rose-900/20 hover:bg-rose-900/30' : 'text-rose-500 bg-rose-50 hover:bg-rose-100'}`}><LogOut size={18} /> Sair da Conta</button>
     </div>
   );
 };
@@ -643,62 +874,109 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
   const [selectedCard, setSelectedCard] = useState(cards[0]?.id || '');
   const [installments, setInstallments] = useState(1);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-
-  const currentCategories = useMemo(() => type === 'Entrada' ? (settings.incomeCategories || DEFAULT_INCOME_CATS) : (type === 'Investimento' ? (settings.investmentCategories || DEFAULT_INVEST_CATS) : (settings.expenseCategories || categories)), [type, settings, categories]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [showAlert, setShowAlert] = useState(false);
+  const [alertMessages, setAlertMessages] = useState<string[]>([]);
+  
+  const currentCategories = useMemo(() => {
+      if (type === 'Entrada') return settings.incomeCategories || DEFAULT_INCOME_CATS;
+      if (type === 'Investimento') return settings.investmentCategories || DEFAULT_INVEST_CATS;
+      return categories;
+  }, [type, settings, categories]);
   useEffect(() => { setCat(currentCategories[0]); }, [currentCategories]);
-
-  const confirmSave = async () => {
-    const val = parseFloat(amount.replace(',', '.'));
-    let cardIdToSave = null;
-    
-    // Se for Cartão, salva o ID do cartão para vincular à fatura
-    if (method === 'Cartão' && type === 'Saída') cardIdToSave = selectedCard;
-
-    if (type === 'Saída' && method === 'Cartão') {
-       const parentId = generateId();
-       const batch = [];
-       const selectedCardData = cards.find((c:any) => c.id === selectedCard);
-
-       for(let i = 0; i < installments; i++) {
-          let d = new Date(date);
-          d.setDate(d.getDate() + 1); // Fuso
-          d.setMonth(d.getMonth() + i);
-
-          // LÓGICA DE FECHAMENTO (INTELIGENTE)
-          if (selectedCardData) {
-              const dayOfPurchase = new Date(date).getDate(); 
-              // Se a compra foi feita no dia ou depois do fechamento, joga para a próxima fatura
-              if (dayOfPurchase >= selectedCardData.closingDay) {
-                  d.setMonth(d.getMonth() + 1);
-              }
-          }
-
-          batch.push({ id: generateId(), description: installments > 1 ? `${desc} (${i+1}/${installments})` : desc, amount: val / installments, type, category: cat, date: d.toISOString().split('T')[0], month: d.toISOString().slice(0, 7), paymentMethod: method, cardId: cardIdToSave, installment: installments > 1 ? { current: i+1, total: installments } : null, parentId: installments > 1 ? parentId : null });
-       }
-       await onSave(batch);
-    } else {
-       await onSave([{ id: generateId(), description: desc, amount: val, type, category: cat, date, month: date.slice(0, 7), paymentMethod: method, cardId: cardIdToSave }]);
+  
+  const parseAmount = (val: string) => {
+    if (!val) return 0;
+    const cleanVal = val.replace(',', '.').replace(/[^0-9.]/g, ''); 
+    const result = parseFloat(cleanVal);
+    return isNaN(result) ? 0 : result;
+  };
+  const checkBudgets = () => {
+    const val = parseAmount(amount);
+    if (val <= 0) { alert("Valor inválido."); return; }
+    if (!desc.trim()) { alert("Insira uma descrição."); return; }
+    const messages = [];
+    if (type === 'Saída') {
+        const catLimit = settings?.categoryLimits?.[cat] || 0;
+        if (catLimit > 0 && val > catLimit) messages.push(`Limite excedido em ${cat} (R$ ${formatCurrency(catLimit)}).`);
+        const totalGoals = settings.goals ? settings.goals.reduce((acc:number, g:Goal) => acc + g.amount, 0) : 0;
+        const currentExpenses = monthDetails?.expenses || 0;
+        const income = settings?.monthlyIncome || 0;
+        const remainingAfterPurchase = income - (currentExpenses + val);
+        if (totalGoals > 0 && remainingAfterPurchase < totalGoals) {
+            const missing = totalGoals - remainingAfterPurchase;
+            messages.push(`Atenção: Impacto em metas (${formatCurrency(missing)} faltantes).`);
+        }
     }
+    if (messages.length > 0) { setAlertMessages(messages); setShowAlert(true); } else { confirmSave(); }
+  };
+  
+  const confirmSave = async () => {
+    setIsSaving(true);
+    try {
+        const val = parseAmount(amount);
+        let cardIdToSave = null;
+        
+        // CORREÇÃO: Salva o ID do cartão se o método for Cartão (mesmo à vista)
+        if (method === 'Cartão' && type === 'Saída') {
+            cardIdToSave = selectedCard;
+        }
+
+        if (type === 'Saída' && method === 'Cartão') {
+           const parentId = generateId();
+           const batch = [];
+           const selectedCardData = cards.find((c:any) => c.id === selectedCard);
+
+           for(let i = 0; i < installments; i++) {
+              let d = new Date(date);
+              d.setDate(d.getDate() + 1); // Fuso
+              d.setMonth(d.getMonth() + i);
+
+              // LÓGICA DE FECHAMENTO: Se a data da compra for >= fechamento, joga para o próximo mês
+              if (selectedCardData) {
+                  const dayOfPurchase = new Date(date).getDate(); 
+                  // Aplica na primeira parcela (e seguintes pelo +i). Se comprou depois do fechamento, vira a fatura.
+                  if (dayOfPurchase >= selectedCardData.closingDay) {
+                      d.setMonth(d.getMonth() + 1);
+                  }
+              }
+
+              batch.push({ 
+                  id: generateId(), 
+                  description: installments > 1 ? `${desc} (${i+1}/${installments})` : desc, 
+                  amount: val / installments, 
+                  type, 
+                  category: cat, 
+                  date: d.toISOString().split('T')[0], 
+                  month: d.toISOString().slice(0, 7), 
+                  paymentMethod: method, 
+                  cardId: cardIdToSave, 
+                  installment: installments > 1 ? { current: i+1, total: installments } : null, 
+                  parentId: installments > 1 ? parentId : null 
+              });
+           }
+           await onSave(batch);
+        } else {
+           await onSave([{ id: generateId(), description: desc, amount: val, type, category: cat, date, month: date.slice(0, 7), paymentMethod: method, cardId: cardIdToSave }]);
+        }
+    } catch (error) { alert("Erro ao salvar."); setIsSaving(false); }
   };
 
   return (
-    <div className={`fixed inset-0 z-50 flex flex-col ${darkMode ? 'bg-gray-900 text-white' : 'bg-white'}`}>
-      <div className="p-4 flex justify-between items-center border-b"><button onClick={onCancel}><X size={24}/></button><h2 className="font-bold text-lg">Nova Transação</h2><div className="w-6"/></div>
-      <div className="p-6 space-y-6 overflow-y-auto">
-        <input type="tel" value={amount} onChange={e=>setAmount(e.target.value)} className="text-5xl font-bold w-full bg-transparent outline-none" placeholder="0,00" autoFocus />
-        <div className="flex p-1 bg-gray-100 rounded-xl"><button onClick={()=>setType('Saída')} className={`flex-1 py-3 rounded-lg font-bold ${type==='Saída'?'bg-white shadow-sm text-rose-500':'text-gray-400'}`}>Despesa</button><button onClick={()=>setType('Entrada')} className={`flex-1 py-3 rounded-lg font-bold ${type==='Entrada'?'bg-white shadow-sm text-emerald-500':'text-gray-400'}`}>Receita</button><button onClick={()=>setType('Investimento')} className={`flex-1 py-3 rounded-lg font-bold ${type==='Investimento'?'bg-white shadow-sm text-blue-500':'text-gray-400'}`}>Investir</button></div>
-        <input value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Ex: Mercado" className="w-full p-3 border rounded-xl text-black" />
-        <div className="space-y-2"><label className="text-xs font-bold uppercase">Data</label><input type="date" value={date} onChange={e=>setDate(e.target.value)} className="w-full p-3 border rounded-xl" /></div>
-        {type === 'Saída' && (<div className="flex gap-2"><button onClick={() => setMethod('Dinheiro')} className={`flex-1 p-3 rounded-xl border ${method === 'Dinheiro' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold' : 'border-gray-200'}`}>Dinheiro/Pix</button><button onClick={() => setMethod('Cartão')} className={`flex-1 p-3 rounded-xl border ${method === 'Cartão' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold' : 'border-gray-200'}`}>Cartão</button></div>)}
-        {method === 'Cartão' && type === 'Saída' && (
-             <div className="flex gap-2 animate-in fade-in">
-                <select value={selectedCard} onChange={e=>setSelectedCard(e.target.value)} className="flex-1 p-3 border rounded-xl text-black">{cards.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-                <select value={installments} onChange={e=>setInstallments(Number(e.target.value))} className="w-24 p-3 border rounded-xl text-black"><option value={1}>1x</option>{[2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n}x</option>)}</select>
-             </div>
-        )}
-        <div className="flex flex-wrap gap-2">{currentCategories.map((c: string) => (<button key={c} onClick={()=>setCat(c)} className={`px-4 py-2 rounded-full border text-xs font-bold ${cat===c?'bg-emerald-600 text-white':'text-gray-400'}`}>{c}</button>))}</div>
-        <button onClick={confirmSave} className="w-full py-4 bg-emerald-600 text-white font-bold rounded-2xl mt-4">Confirmar</button>
-      </div>
+    <div className={`fixed inset-0 w-full h-full z-50 flex flex-col animate-in slide-in-from-bottom duration-300 overflow-hidden ${darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`} style={{overscrollBehavior: 'none', height: '100dvh'}}>
+      {showAlert && (
+          <div className="absolute inset-0 z-[60] bg-black/50 flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in"><div className={`rounded-3xl p-6 w-full max-w-sm shadow-2xl ${darkMode ? 'bg-gray-800' : 'bg-white'}`}><div className="flex justify-center mb-4"><div className="bg-amber-100 p-4 rounded-full text-amber-600"><AlertTriangle size={32}/></div></div><h3 className={`text-xl font-bold text-center mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Atenção</h3><div className="space-y-2 mb-6">{alertMessages.map((msg, idx) => (<p key={idx} className={`text-sm text-center p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-300' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>{msg}</p>))}</div><div className="flex gap-3"><button onClick={() => { setShowAlert(false); setIsSaving(false); }} className={`flex-1 py-3 font-bold rounded-xl ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-500'}`}>Revisar</button><button onClick={() => { setShowAlert(false); confirmSave(); }} className={`flex-1 py-3 font-bold rounded-xl ${darkMode ? 'bg-amber-600 text-white' : 'bg-amber-500 text-white shadow-lg'}`}>Confirmar</button></div></div></div>
+      )}
+      <div className={`p-4 flex justify-between items-center border-b ${darkMode ? 'border-gray-800' : 'border-gray-100'}`}><button onClick={onCancel} className={`p-2 rounded-full ${darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-gray-100'}`}><X size={20}/></button><h2 className="font-bold text-lg">Nova Transação</h2><div className="w-9" /></div>
+      <form onSubmit={(e) => { e.preventDefault(); checkBudgets(); }} className="p-6 space-y-6 flex-1 overflow-y-auto pb-24 overscroll-contain" style={{ touchAction: 'pan-y' }}>
+        <div><label className="text-xs font-bold text-gray-400 uppercase">Valor Total</label><input type="tel" value={amount} onChange={e => setAmount(e.target.value)} className={`w-full text-5xl font-bold bg-transparent placeholder-gray-500 focus:outline-none py-2 ${darkMode ? 'text-white' : 'text-gray-800'}`} placeholder="0,00" autoFocus /></div>
+        <div className={`flex p-1 rounded-xl ${darkMode ? 'bg-gray-800' : 'bg-gray-100'}`}><button type="button" onClick={() => setType('Saída')} className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${type === 'Saída' ? (darkMode ? 'bg-gray-700 text-rose-400' : 'bg-white text-rose-600 shadow-sm') : 'text-gray-400'}`}>Despesa</button><button type="button" onClick={() => setType('Entrada')} className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${type === 'Entrada' ? (darkMode ? 'bg-gray-700 text-emerald-400' : 'bg-white text-emerald-600 shadow-sm') : 'text-gray-400'}`}>Receita</button><button type="button" onClick={() => setType('Investimento')} className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${type === 'Investimento' ? (darkMode ? 'bg-gray-700 text-blue-400' : 'bg-white text-blue-600 shadow-sm') : 'text-gray-400'}`}>Investir</button></div>
+        <div className="space-y-2"><label className="text-xs font-bold text-gray-400 uppercase">Descrição</label><input value={desc} onChange={e => setDesc(e.target.value)} className={`w-full p-3 border rounded-xl outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-gray-50 border-gray-100'}`} placeholder="Ex: Mercado" /></div>
+        <div className="space-y-2"><label className="text-xs font-bold text-gray-400 uppercase">Data</label><input type="date" value={date} onChange={e => setDate(e.target.value)} className={`w-full p-3 border rounded-xl outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-gray-50 border-gray-100'}`} /></div>
+        {type === 'Saída' && (<div className={`space-y-4 pt-4 border-t ${darkMode ? 'border-gray-800' : 'border-gray-100'}`}><label className="text-xs font-bold text-gray-400 uppercase">Pagamento</label><div className="flex gap-2"><button type="button" onClick={() => setMethod('Dinheiro')} className={`flex-1 p-3 rounded-xl border ${method === 'Dinheiro' ? (darkMode ? 'border-emerald-600 bg-emerald-900/30 text-emerald-400' : 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold') : (darkMode ? 'border-gray-700 text-gray-500' : 'border-gray-200 text-gray-500')}`}>Dinheiro/Pix</button><button type="button" onClick={() => setMethod('Cartão')} className={`flex-1 p-3 rounded-xl border ${method === 'Cartão' ? (darkMode ? 'border-emerald-600 bg-emerald-900/30 text-emerald-400' : 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold') : (darkMode ? 'border-gray-700 text-gray-500' : 'border-gray-200 text-gray-500')}`}>Cartão</button></div>{method === 'Cartão' && (<div className="space-y-4 animate-in fade-in"><select value={selectedCard} onChange={e => setSelectedCard(e.target.value)} className={`w-full p-3 border rounded-xl outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-200'}`}>{cards.map((c: any) => <option key={c.id} value={c.id}>{c.name} ({c.holder})</option>)}</select><select value={installments} onChange={e => setInstallments(Number(e.target.value))} className={`w-full p-3 border rounded-xl outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-200'}`}><option value={1}>À vista (1x)</option>{[2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n}x</option>)}</select></div>)}</div>)}
+        <div className="space-y-2 pt-2"><label className="text-xs font-bold text-gray-400 uppercase">Categoria</label><div className="flex flex-wrap gap-2">{currentCategories.map((c: string) => (<button key={c} type="button" onClick={() => setCat(c)} className={`px-4 py-2 rounded-full text-sm font-medium border transition-all ${cat === c ? 'bg-emerald-600 text-white border-emerald-600' : (darkMode ? 'bg-gray-800 border-gray-700 text-gray-400' : 'bg-white text-gray-600 border-gray-200')}`}>{c}</button>))}</div></div>
+        <button type="submit" disabled={isSaving} className={`w-full py-4 font-bold rounded-2xl transition-all ${isSaving ? 'bg-gray-400 cursor-not-allowed' : (darkMode ? 'bg-emerald-600 text-white shadow-none' : 'bg-emerald-600 text-white shadow-emerald-200')}`}>{isSaving ? 'Salvando...' : 'Confirmar'}</button>
+      </form>
     </div>
   );
 };
@@ -718,6 +996,7 @@ export default function App() {
   const [editingTransaction, setEditingTransaction] = useState<{data: Transaction, mode: 'home'|'reports'|'cards'} | null>(null);
 
   const monthsRef = useRef<HTMLDivElement>(null);
+
   const selectedMonthKey = getMonthKey(currentDate);
   const currentYear = currentDate.getFullYear();
   const currentMonthIdx = currentDate.getMonth();
@@ -738,9 +1017,13 @@ export default function App() {
     return onAuthStateChanged(auth, (u) => {
       setUser(u); setLoading(false);
       if(u) {
-        onSnapshot(query(collection(db, `users/${u.uid}/transactions`)), (s) => setRawTransactions(s.docs.map(d => d.data() as Transaction).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())));
-        onSnapshot(doc(db, `users/${u.uid}/settings`, 'cards'), (s) => { if(s.exists()) setCards(s.data().list); });
-        onSnapshot(doc(db, `users/${u.uid}/settings`, 'config'), (s) => { if(s.exists()) { setCategories(s.data().categories); setSettings(s.data().userSettings); } });
+        onSnapshot(query(collection(db, `users/${u.uid}/transactions`)), (snap) => {
+          const data = snap.docs.map(d => d.data() as Transaction);
+          data.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          setRawTransactions(data);
+        });
+        onSnapshot(doc(db, `users/${u.uid}/settings`, 'cards'), (snap) => { if(snap.exists() && snap.data().list) setCards(snap.data().list); });
+        onSnapshot(doc(db, `users/${u.uid}/settings`, 'config'), (snap) => { if(snap.exists()) { const d = snap.data(); if(d.categories) setCategories(d.categories); if(d.userSettings) setSettings(d.userSettings); } });
       }
     });
   }, []);
@@ -750,7 +1033,7 @@ export default function App() {
   const monthDetails = useMemo(() => {
     let inc = 0, exp = 0;
     filteredTransactions.forEach(t => {
-        // FILTRO CRÍTICO: Saldo Inicial não conta para o fluxo
+        // CORREÇÃO: Ignora "Saldo Inicial" no fluxo de caixa (saldo da conta)
         if (t.category === 'Saldo Inicial' || t.description.includes('Saldo Inicial')) return;
         if(t.type === 'Entrada') inc += t.amount;
         else exp += t.amount;
@@ -765,7 +1048,7 @@ export default function App() {
     }
   }, [currentMonthIdx, screen]);
 
-  const handleLogin = async (e:any) => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, email, password); } catch(e) { alert("Erro login"); } };
+  const handleLogin = async (e:any) => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, email, password); } catch(e) { alert("Erro ao entrar."); } };
   
   const addTransactions = async (newTrans: Transaction[]) => {
     if(!user) return;
