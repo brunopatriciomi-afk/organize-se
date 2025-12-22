@@ -50,7 +50,7 @@ export interface Transaction {
   date: string;
   month: string;
   paymentMethod: 'Dinheiro' | 'Cartão';
-  cardId?: string | null; // Aceita null
+  cardId?: string | null;
   installment?: { current: number; total: number };
   parentId?: string;
 }
@@ -521,6 +521,7 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
 };
 const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, onDeleteCategory, onLogout, monthlySavings, darkMode }: any) => {
   const [showCats, setShowCats] = useState(false);
+  const [showGoals, setShowGoals] = useState(false);
   const [newCat, setNewCat] = useState('');
   const [isEditingIncome, setIsEditingIncome] = useState(false);
   const [tempIncome, setTempIncome] = useState(settings.monthlyIncome.toString());
@@ -602,34 +603,40 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
             )}
          </div>
 
-         {/* Múltiplas Metas */}
-         <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-            <div className="flex items-center gap-4 mb-4">
-               <div className={`p-3 rounded-full ${darkMode ? 'bg-amber-900/50 text-amber-400' : 'bg-amber-50 text-amber-600'}`}><Target size={20}/></div>
-               <div>
-                   <p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Minhas Metas</p>
-                   <p className="text-xs text-gray-400">Total: {formatCurrency(totalGoals)}</p>
-               </div>
+         {/* Múltiplas Metas (Collapsible) */}
+         <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+            <div onClick={() => setShowGoals(!showGoals)} className="p-4 flex items-center justify-between cursor-pointer">
+                <div className="flex items-center gap-4">
+                   <div className={`p-3 rounded-full ${darkMode ? 'bg-amber-900/50 text-amber-400' : 'bg-amber-50 text-amber-600'}`}><Target size={20}/></div>
+                   <div>
+                      <p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Minhas Metas</p>
+                      <p className="text-xs text-gray-400">Total: {formatCurrency(totalGoals)}</p>
+                   </div>
+                </div>
+                <ChevronRight size={16} className={`text-gray-300 transition-transform ${showGoals ? 'rotate-90' : ''}`}/>
             </div>
             
-            <div className="space-y-2 mb-4">
-               {settings.goals && settings.goals.map((g:Goal) => (
-                  <div key={g.id} className={`flex justify-between items-center p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}>
-                     <span className={`text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-700'}`}>{g.name}</span>
-                     <div className="flex items-center gap-3">
-                        <span className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{formatCurrency(g.amount)}</span>
-                        <button onClick={() => handleDeleteGoal(g.id)} className="text-gray-400 hover:text-rose-500"><Trash2 size={14}/></button>
-                     </div>
-                  </div>
-               ))}
-               {(!settings.goals || settings.goals.length === 0) && <p className="text-xs text-gray-400 text-center py-2">Nenhuma meta cadastrada.</p>}
-            </div>
-
-            <div className="flex gap-2 border-t pt-3 dark:border-gray-700">
-               <input placeholder="Nome (Ex: Viagem)" value={newGoalName} onChange={e=>setNewGoalName(e.target.value)} className={`flex-1 p-2 text-xs border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white'}`} />
-               <input type="number" placeholder="Valor" value={newGoalAmount} onChange={e=>setNewGoalAmount(e.target.value)} className={`w-20 p-2 text-xs border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white'}`} />
-               <button onClick={handleAddGoal} className="bg-emerald-600 text-white p-2 rounded-lg"><Plus size={16}/></button>
-            </div>
+            {showGoals && (
+                <div className={`px-4 pb-4 border-t animate-in slide-in-from-top-2 ${darkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50/50 border-gray-100'}`}>
+                    <div className="flex gap-2 mb-3 mt-3">
+                        <input placeholder="Nome (Ex: Viagem)" value={newGoalName} onChange={e=>setNewGoalName(e.target.value)} className={`flex-1 p-2 text-xs border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white'}`} />
+                        <input type="number" placeholder="Valor" value={newGoalAmount} onChange={e=>setNewGoalAmount(e.target.value)} className={`w-20 p-2 text-xs border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white'}`} />
+                        <button onClick={handleAddGoal} className="bg-emerald-600 text-white p-2 rounded-lg"><Plus size={16}/></button>
+                    </div>
+                    <div className="space-y-2">
+                    {settings.goals && settings.goals.map((g:Goal) => (
+                        <div key={g.id} className={`flex justify-between items-center p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}>
+                            <span className={`text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-700'}`}>{g.name}</span>
+                            <div className="flex items-center gap-3">
+                                <span className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{formatCurrency(g.amount)}</span>
+                                <button onClick={() => handleDeleteGoal(g.id)} className="text-gray-400 hover:text-rose-500"><Trash2 size={14}/></button>
+                            </div>
+                        </div>
+                    ))}
+                    {(!settings.goals || settings.goals.length === 0) && <p className="text-xs text-gray-400 text-center py-2">Nenhuma meta cadastrada.</p>}
+                    </div>
+                </div>
+            )}
          </div>
 
          {/* Categorias e Limites */}
@@ -699,14 +706,8 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
   // Limpeza de string numérica robusta
   const parseAmount = (val: string) => {
     if (!val) return 0;
-    // Tenta interpretar formato brasileiro se houver virgula
-    let cleanVal = val;
-    if(val.includes(',')) {
-       // Remove pontos de milhar, troca virgula por ponto
-       cleanVal = val.replace(/\./g, '').replace(',', '.');
-    }
-    // Remove tudo que não for numero ou ponto
-    cleanVal = cleanVal.replace(/[^0-9.]/g, '');
+    // Aceita 1000,50 ou 1000.50 -> Converte para 1000.50
+    const cleanVal = val.replace(',', '.').replace(/[^0-9.]/g, ''); 
     const result = parseFloat(cleanVal);
     return isNaN(result) ? 0 : result;
   };
@@ -1089,8 +1090,14 @@ export default function App() {
     await setDoc(doc(db, `users/${user.uid}/settings`, 'cards'), { list: newList }, { merge: true });
   };
 
+  // --- NOVA LÓGICA DE DATA ---
   const changeMonth = (idx: number) => setCurrentDate(new Date(currentYear, idx, 1));
-  const changeYear = (dir: number) => setCurrentDate(new Date(currentYear + dir, currentMonthIdx, 1));
+  const changeYear = (dir: number) => {
+    const newYear = currentYear + dir;
+    // Se for pra frente (1), vai pra Janeiro (0). Se pra tras (-1), vai pra Dezembro (11).
+    const newMonth = dir > 0 ? 0 : 11;
+    setCurrentDate(new Date(newYear, newMonth, 1));
+  };
 
   if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-emerald-500"/></div>;
 
@@ -1147,10 +1154,10 @@ export default function App() {
       </div>
 
       {screen !== AppScreen.Add && (
-        <div className={`fixed bottom-0 w-full border-t p-2 pb-6 flex justify-between items-center px-8 z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+        <div className={`fixed bottom-0 w-full border-t p-2 pb-6 flex justify-between items-center px-8 z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-100'}`}>
           <button onClick={() => setScreen(AppScreen.Home)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Home ? 'text-emerald-500' : 'text-gray-400'}`}><LayoutDashboard size={24} strokeWidth={screen===AppScreen.Home?2.5:2} /><span className="text-[10px] font-bold">Início</span></button>
           <button onClick={() => setScreen(AppScreen.Cards)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Cards ? 'text-emerald-500' : 'text-gray-400'}`}><CreditCard size={24} strokeWidth={screen===AppScreen.Cards?2.5:2} /><span className="text-[10px] font-bold">Cartões</span></button>
-          <div className="relative -top-8"><button onClick={() => setScreen(AppScreen.Add)} className="bg-emerald-600 text-white w-14 h-14 rounded-full shadow-xl shadow-emerald-200 flex items-center justify-center hover:scale-105 transition-transform"><Plus size={32}/></button></div>
+          <div className="relative -top-8"><button onClick={() => setScreen(AppScreen.Add)} className={`w-14 h-14 rounded-full shadow-xl flex items-center justify-center hover:scale-105 transition-transform ${isDark ? 'bg-emerald-600 text-white shadow-emerald-900' : 'bg-emerald-600 text-white shadow-emerald-200'}`}><Plus size={32}/></button></div>
           <button onClick={() => setScreen(AppScreen.Reports)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Reports ? 'text-emerald-500' : 'text-gray-400'}`}><PieChartIcon size={24} strokeWidth={screen===AppScreen.Reports?2.5:2} /><span className="text-[10px] font-bold">Relatórios</span></button>
           <button onClick={() => setScreen(AppScreen.Profile)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Profile ? 'text-emerald-500' : 'text-gray-400'}`}><UserIcon size={24} strokeWidth={screen===AppScreen.Profile?2.5:2} /><span className="text-[10px] font-bold">Perfil</span></button>
         </div>
