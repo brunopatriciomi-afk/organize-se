@@ -93,11 +93,11 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, onTransferBalan
         <div className="absolute top-0 right-0 p-4 opacity-10"><Wallet size={120} /></div>
         <p className="text-emerald-100 font-medium mb-1 text-sm">Saldo em Conta</p>
         
-        {/* CORREÇÃO: Saldo Vermelho se Negativo */}
+        {/* CORREÇÃO: Saldo fica vermelho se negativo */}
         <h1 className={`text-4xl font-bold mb-8 ${monthDetails.balance < 0 ? 'text-rose-300' : ''}`}>
             {formatCurrency(monthDetails.balance)}
         </h1>
-        
+
         <div className="flex gap-4">
           <div className="flex items-center gap-3 bg-black/20 px-3 py-3 rounded-2xl flex-1 backdrop-blur-sm min-w-0">
             <div className="p-1.5 bg-emerald-400/20 rounded-full shrink-0"><ArrowUpCircle size={18} className="text-emerald-200"/></div>
@@ -127,7 +127,8 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, onTransferBalan
         <div className="space-y-3">
           {transactions.slice(0, 5).map((t: Transaction) => {
              // CORREÇÃO: Mostra valor da parcela
-             const displayAmount = t.amount;
+             const displayAmount = t.amount; 
+             
              let iconColor = t.type === 'Entrada' ? (darkMode ? 'text-emerald-400 bg-emerald-900/50' : 'text-emerald-600 bg-emerald-100') : (darkMode ? 'text-rose-400 bg-rose-900/50' : 'text-rose-600 bg-rose-50');
              let icon = t.type === 'Entrada' ? <ArrowUpCircle size={20}/> : <ArrowDownCircle size={20}/>;
              
@@ -194,7 +195,7 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
   }, [filterType, settings, categories]);
 
   const reportData = useMemo(() => {
-    // FILTRAGEM RIGOROSA
+    // FILTRAGEM RIGOROSA: Remove "Saldo Inicial" dos gráficos de fluxo
     const filteredTrans = transactions.filter((t:any) => 
         t.category !== 'Saldo Inicial' && 
         !t.description.includes('Saldo Inicial') &&
@@ -236,6 +237,7 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
         centerColor = darkMode ? '#FFFFFF' : '#1F2937';
 
         chartData = Array.from(map, ([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value);
+
         chartData = chartData.map((item, index) => ({
             ...item,
             color: CHART_COLORS[index % CHART_COLORS.length]
@@ -249,7 +251,7 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
 
         if (filterType === 'Tudo') {
             if (selected.name === 'Receitas') {
-                percentBase = selected.value;
+                percentBase = selected.value; // 100%
                 suffix = " das Entradas";
             } else {
                 percentBase = totalIncome;
@@ -291,14 +293,17 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
   return (
     <div className="p-4 pb-32">
       <h2 className={`text-xl font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Relatórios</h2>
+      
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}><Filter size={14} className="text-gray-400"/></div>
+         
          <select value={filterType} onChange={e=>handleTypeChange(e.target.value)} className={`px-4 py-2 rounded-xl border text-sm font-bold outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-600'}`}>
             <option value="Tudo">Visão Geral (Tudo)</option>
             <option value="Saída">Despesas</option>
             <option value="Investimento">Investimentos</option>
             <option value="Entrada">Receitas</option>
          </select>
+
          <div className="relative">
             <select 
                 value={filterCat} 
@@ -442,6 +447,8 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
   };
 
   const activeCard = cards.find((c: CardData) => c.id === selectedCardId);
+
+  // Lista de transações da fatura atual (Para ver detalhes)
   const currentInvoiceList = useMemo(() => {
       if (!selectedCardId) return [];
       return transactions.filter((t: Transaction) => t.cardId === selectedCardId && t.month === currentMonthKey && t.type === 'Saída');
@@ -679,10 +686,10 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
       <div className="p-4 flex justify-between items-center border-b"><button onClick={onCancel}><X size={24}/></button><h2 className="font-bold text-lg">Nova Transação</h2><div className="w-6"/></div>
       <div className="p-6 space-y-6 overflow-y-auto">
         <input type="tel" value={amount} onChange={e=>setAmount(e.target.value)} className="text-5xl font-bold w-full bg-transparent outline-none" placeholder="0,00" autoFocus />
-        <div className="flex p-1 bg-gray-100 rounded-xl"><button onClick={()=>setType('Saída')} className={`flex-1 py-3 rounded-lg font-bold ${type==='Saída'?'bg-white text-rose-500':'text-gray-400'}`}>Despesa</button><button onClick={()=>setType('Entrada')} className={`flex-1 py-3 rounded-lg font-bold ${type==='Entrada'?'bg-white text-emerald-500':'text-gray-400'}`}>Receita</button><button onClick={()=>setType('Investimento')} className={`flex-1 py-3 rounded-lg font-bold ${type==='Investimento'?'bg-white text-blue-500':'text-gray-400'}`}>Investir</button></div>
-        <input value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Descrição" className="w-full p-3 border rounded-xl text-black" />
+        <div className="flex p-1 bg-gray-100 rounded-xl"><button onClick={()=>setType('Saída')} className={`flex-1 py-3 rounded-lg font-bold ${type==='Saída'?'bg-white shadow-sm text-rose-500':'text-gray-400'}`}>Despesa</button><button onClick={()=>setType('Entrada')} className={`flex-1 py-3 rounded-lg font-bold ${type==='Entrada'?'bg-white shadow-sm text-emerald-500':'text-gray-400'}`}>Receita</button><button onClick={()=>setType('Investimento')} className={`flex-1 py-3 rounded-lg font-bold ${type==='Investimento'?'bg-white shadow-sm text-blue-500':'text-gray-400'}`}>Investir</button></div>
+        <input value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Ex: Mercado" className="w-full p-3 border rounded-xl text-black" />
         <div className="space-y-2"><label className="text-xs font-bold uppercase">Data</label><input type="date" value={date} onChange={e=>setDate(e.target.value)} className="w-full p-3 border rounded-xl" /></div>
-        {type === 'Saída' && (<div className="flex gap-2"><button onClick={() => setMethod('Dinheiro')} className={`flex-1 p-3 rounded-xl border ${method === 'Dinheiro' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold' : 'border-gray-200'}`}>Dinheiro</button><button onClick={() => setMethod('Cartão')} className={`flex-1 p-3 rounded-xl border ${method === 'Cartão' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold' : 'border-gray-200'}`}>Cartão</button></div>)}
+        {type === 'Saída' && (<div className="flex gap-2"><button onClick={() => setMethod('Dinheiro')} className={`flex-1 p-3 rounded-xl border ${method === 'Dinheiro' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold' : 'border-gray-200'}`}>Dinheiro/Pix</button><button onClick={() => setMethod('Cartão')} className={`flex-1 p-3 rounded-xl border ${method === 'Cartão' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold' : 'border-gray-200'}`}>Cartão</button></div>)}
         {method === 'Cartão' && type === 'Saída' && (
              <div className="flex gap-2 animate-in fade-in">
                 <select value={selectedCard} onChange={e=>setSelectedCard(e.target.value)} className="flex-1 p-3 border rounded-xl text-black">{cards.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
@@ -706,6 +713,8 @@ export default function App() {
   const [screen, setScreen] = useState<AppScreen>(AppScreen.Home);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [editingTransaction, setEditingTransaction] = useState<{data: Transaction, mode: 'home'|'reports'|'cards'} | null>(null);
 
   const monthsRef = useRef<HTMLDivElement>(null);
@@ -731,7 +740,7 @@ export default function App() {
       if(u) {
         onSnapshot(query(collection(db, `users/${u.uid}/transactions`)), (s) => setRawTransactions(s.docs.map(d => d.data() as Transaction).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())));
         onSnapshot(doc(db, `users/${u.uid}/settings`, 'cards'), (s) => { if(s.exists()) setCards(s.data().list); });
-        onSnapshot(doc(db, `users/${u.uid}/settings`, 'config'), (s) => { if(s.exists()) { const d = snap.data(); if(d.categories) setCategories(d.categories); if(d.userSettings) setSettings(d.userSettings); } });
+        onSnapshot(doc(db, `users/${u.uid}/settings`, 'config'), (s) => { if(s.exists()) { setCategories(s.data().categories); setSettings(s.data().userSettings); } });
       }
     });
   }, []);
@@ -756,7 +765,7 @@ export default function App() {
     }
   }, [currentMonthIdx, screen]);
 
-  const handleLogin = async (e:any) => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, "teste@teste.com", "123456"); } catch(e) { alert("Erro login"); } };
+  const handleLogin = async (e:any) => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, email, password); } catch(e) { alert("Erro login"); } };
   
   const addTransactions = async (newTrans: Transaction[]) => {
     if(!user) return;
