@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell 
 } from 'recharts';
@@ -80,7 +80,8 @@ const getMonthKey = (date: Date) => date.toISOString().slice(0, 7);
 const Home = ({ transactions, monthDetails, onSelectTransaction, darkMode }: any) => {
   return (
     <div className="space-y-6 p-4 pb-32">
-      <div className={`rounded-[32px] p-6 shadow-xl relative overflow-hidden transition-colors ${darkMode ? 'bg-emerald-900 text-white shadow-none' : 'bg-emerald-600 text-white shadow-emerald-200'}`}>
+      {/* Card Principal: Removemos shadow-emerald-200 no dark mode */}
+      <div className={`rounded-[32px] p-6 relative overflow-hidden transition-colors ${darkMode ? 'bg-emerald-900 text-white shadow-none' : 'bg-emerald-600 text-white shadow-xl shadow-emerald-200'}`}>
         <div className="absolute top-0 right-0 p-4 opacity-10"><Wallet size={120} /></div>
         <p className="text-emerald-100 font-medium mb-1 text-sm">Saldo em Conta</p>
         <h1 className="text-4xl font-bold mb-8">{formatCurrency(monthDetails.balance)}</h1>
@@ -187,7 +188,21 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
                 <Pie data={data} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
                   {data.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
                 </Pie>
-                <RechartsTooltip contentStyle={{backgroundColor: darkMode ? '#1f2937' : '#fff', borderColor: darkMode ? '#374151' : '#e5e7eb', color: darkMode ? '#fff' : '#000'}} />
+                {/* CORREÇÃO DO TOOLTIP: Forçando cor branca no texto no modo escuro */}
+                <RechartsTooltip 
+                    contentStyle={{
+                        backgroundColor: darkMode ? '#1f2937' : '#fff', 
+                        borderColor: darkMode ? '#374151' : '#e5e7eb',
+                        borderRadius: '12px',
+                        padding: '10px'
+                    }}
+                    itemStyle={{
+                        color: darkMode ? '#F3F4F6' : '#111827', // Texto Branco no Dark, Preto no Light
+                        fontWeight: 'bold',
+                        fontSize: '12px'
+                    }}
+                    labelStyle={{ display: 'none' }} // Remove o titulo redundante
+                />
               </PieChart>
             </ResponsiveContainer>
             <div className="text-center absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none">
@@ -209,7 +224,6 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
                         {t.type === 'Entrada' ? <ArrowUpCircle size={16}/> : <ArrowDownCircle size={16}/>}
                     </div>
                     <div>
-                        {/* AQUI ESTAVA O ERRO DE COR. FORCEI GRAY-100 NO DARK MODE */}
                         <p className={`font-bold text-sm ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>{t.description}</p>
                         <p className="text-xs text-gray-400">{t.category} • {formatDate(t.date)}</p>
                     </div>
@@ -363,7 +377,7 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
   );
 };
 
-// --- (CardsScreen) ---
+// --- (CardsScreen - Reutilizado) ---
 const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDeleteCard, darkMode }: any) => {
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -801,7 +815,8 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
   };
 
   return (
-    <div className={`fixed inset-0 w-full h-full z-50 flex flex-col animate-in slide-in-from-bottom duration-300 overflow-hidden ${darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`} style={{touchAction: 'none'}}>
+    // FIXAÇÃO DA TELA E REMOÇÃO DE BOUNCE
+    <div className={`fixed inset-0 w-full h-full z-50 flex flex-col animate-in slide-in-from-bottom duration-300 overflow-hidden ${darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`} style={{overscrollBehavior: 'none'}}>
       
       {showAlert && (
           <div className="absolute inset-0 z-[60] bg-black/50 flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in">
@@ -828,9 +843,10 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
         <h2 className="font-bold text-lg">Nova Transação</h2>
         <div className="w-9" />
       </div>
-      <form onSubmit={(e) => { e.preventDefault(); checkBudgets(); }} className="p-6 space-y-6 flex-1 overflow-y-auto pb-24 overscroll-none" style={{overscrollBehavior: 'none'}}>
+      <form onSubmit={(e) => { e.preventDefault(); checkBudgets(); }} className="p-6 space-y-6 flex-1 overflow-y-auto pb-24 overscroll-contain">
         <div>
            <label className="text-xs font-bold text-gray-400 uppercase">Valor Total</label>
+           {/* type="tel" abre teclado numérico mas aceita vírgula e ponto */}
            <input type="tel" value={amount} onChange={e => setAmount(e.target.value)}
              className={`w-full text-5xl font-bold bg-transparent placeholder-gray-500 focus:outline-none py-2 ${darkMode ? 'text-white' : 'text-gray-800'}`} placeholder="0,00" autoFocus />
         </div>
@@ -877,6 +893,7 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
             ))}
           </div>
         </div>
+        {/* BOTÃO SEM SOMBRA NO DARK MODE */}
         <button type="submit" disabled={isSaving} className={`w-full py-4 font-bold rounded-2xl shadow-lg transition-all ${isSaving ? 'bg-gray-400 cursor-not-allowed' : (darkMode ? 'bg-emerald-600 text-white shadow-none' : 'bg-emerald-600 text-white shadow-emerald-200')}`}>
             {isSaving ? 'Salvando...' : 'Confirmar'}
         </button>
@@ -900,6 +917,9 @@ export default function App() {
   const [password, setPassword] = useState('');
   
   const [editingTransaction, setEditingTransaction] = useState<{data: Transaction, mode: 'home'|'reports'} | null>(null);
+
+  // REFERÊNCIA PARA SCROLL AUTOMÁTICO DOS MESES
+  const monthsRef = useRef<HTMLDivElement>(null);
 
   const selectedMonthKey = getMonthKey(currentDate);
   const currentYear = currentDate.getFullYear();
@@ -1083,11 +1103,25 @@ export default function App() {
     await setDoc(doc(db, `users/${user.uid}/settings`, 'cards'), { list: newList }, { merge: true });
   };
 
+  // --- NOVA LÓGICA DE DATA E SCROLL ---
   const changeMonth = (idx: number) => setCurrentDate(new Date(currentYear, idx, 1));
+  
   const changeYear = (dir: number) => {
     const newYear = currentYear + dir;
+    // Se for pra frente (1), vai pra Janeiro (0). Se pra tras (-1), vai pra Dezembro (11).
     const newMonth = dir > 0 ? 0 : 11;
     setCurrentDate(new Date(newYear, newMonth, 1));
+
+    // Rolar a barra de meses
+    if (monthsRef.current) {
+        if (dir > 0) {
+            // Vai pro futuro -> Rola pro inicio (Jan)
+            monthsRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+        } else {
+            // Vai pro passado -> Rola pro fim (Dez)
+            monthsRef.current.scrollTo({ left: 1000, behavior: 'smooth' });
+        }
+    }
   };
 
   if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-emerald-500"/></div>;
@@ -1126,10 +1160,11 @@ export default function App() {
               <h2 className={`text-xl font-bold ${isDark ? 'text-white' : 'text-gray-800'}`}>{currentYear}</h2>
               <button onClick={() => changeYear(1)} className={`p-2 hover:text-emerald-500 ${isDark ? 'text-gray-400' : 'text-gray-400'}`}><ChevronRight size={20}/></button>
            </div>
-           <div className="flex overflow-x-auto px-6 gap-3 pb-4 scrollbar-hide">
+           {/* Adicionado REF para scroll automatico */}
+           <div ref={monthsRef} className="flex overflow-x-auto px-6 gap-3 pb-4 scrollbar-hide">
               {MONTHS.map((m, idx) => (
                  <button key={m} onClick={() => changeMonth(idx)} 
-                   className={`px-5 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap ${idx === currentMonthIdx ? 'bg-emerald-600 text-white shadow-md shadow-emerald-200' : (isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-50 text-gray-400 hover:bg-gray-100')}`}>
+                   className={`px-5 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap ${idx === currentMonthIdx ? (isDark ? 'bg-emerald-600 text-white shadow-none' : 'bg-emerald-600 text-white shadow-md shadow-emerald-200') : (isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-50 text-gray-400 hover:bg-gray-100')}`}>
                    {m}
                  </button>
               ))}
@@ -1148,7 +1183,8 @@ export default function App() {
         <div className={`fixed bottom-0 w-full border-t p-2 pb-6 flex justify-between items-center px-8 z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-100'}`}>
           <button onClick={() => setScreen(AppScreen.Home)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Home ? 'text-emerald-500' : 'text-gray-400'}`}><LayoutDashboard size={24} strokeWidth={screen===AppScreen.Home?2.5:2} /><span className="text-[10px] font-bold">Início</span></button>
           <button onClick={() => setScreen(AppScreen.Cards)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Cards ? 'text-emerald-500' : 'text-gray-400'}`}><CreditCard size={24} strokeWidth={screen===AppScreen.Cards?2.5:2} /><span className="text-[10px] font-bold">Cartões</span></button>
-          <div className="relative -top-8"><button onClick={() => setScreen(AppScreen.Add)} className={`w-14 h-14 rounded-full shadow-xl flex items-center justify-center hover:scale-105 transition-transform ${isDark ? 'bg-emerald-600 text-white shadow-emerald-900/20' : 'bg-emerald-600 text-white shadow-emerald-200'}`}><Plus size={32}/></button></div>
+          {/* Botão flutuante SEM SOMBRA no dark mode */}
+          <div className="relative -top-8"><button onClick={() => setScreen(AppScreen.Add)} className={`w-14 h-14 rounded-full shadow-xl flex items-center justify-center hover:scale-105 transition-transform ${isDark ? 'bg-emerald-600 text-white shadow-none' : 'bg-emerald-600 text-white shadow-emerald-200'}`}><Plus size={32}/></button></div>
           <button onClick={() => setScreen(AppScreen.Reports)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Reports ? 'text-emerald-500' : 'text-gray-400'}`}><PieChartIcon size={24} strokeWidth={screen===AppScreen.Reports?2.5:2} /><span className="text-[10px] font-bold">Relatórios</span></button>
           <button onClick={() => setScreen(AppScreen.Profile)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Profile ? 'text-emerald-500' : 'text-gray-400'}`}><UserIcon size={24} strokeWidth={screen===AppScreen.Profile?2.5:2} /><span className="text-[10px] font-bold">Perfil</span></button>
         </div>
