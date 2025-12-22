@@ -1173,4 +1173,4 @@ export default function App() {
       {editingTransaction && (<EditTransactionModal transaction={editingTransaction.data} mode={editingTransaction.mode} categories={categories} settings={settings} cards={cards} darkMode={settings.darkMode} onClose={() => setEditingTransaction(null)} onRewrite={rewriteTransaction} onAnticipate={anticipateTransaction} onDelete={deleteTransaction} />)}
     </div>
   );
-}
+}//
