@@ -121,7 +121,6 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, onTransferBalan
         <h2 className={`text-lg font-bold mb-4 px-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Histórico (Últimos 5)</h2>
         <div className="space-y-3">
           {transactions.slice(0, 5).map((t: Transaction) => {
-             // CORREÇÃO: Mostra o valor da parcela (t.amount), não o total
              const displayAmount = t.amount; 
              
              let iconColor = t.type === 'Entrada' ? (darkMode ? 'text-emerald-400 bg-emerald-900/50' : 'text-emerald-600 bg-emerald-100') : (darkMode ? 'text-rose-400 bg-rose-900/50' : 'text-rose-600 bg-rose-50');
@@ -168,21 +167,20 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, onTransferBalan
   );
 };
 
-// --- TELA: RELATÓRIOS (CORRIGIDA - PORCENTAGEM SOBRE RENDA) ---
+// --- TELA: RELATÓRIOS (CORRIGIDA - SALDO INICIAL E PORCENTAGEM) ---
 const Reports = ({ transactions, categories, settings, darkMode, onSelectTransaction }: any) => {
   const [filterType, setFilterType] = useState<'Tudo' | 'Saída' | 'Entrada' | 'Investimento'>('Tudo');
   const [filterCat, setFilterCat] = useState('Todas');
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
-  // Calcula o TOTAL DE ENTRADAS (RENDA) do mês para usar como base 100%
+  // Calcula o TOTAL DE ENTRADAS (RENDA)
   const totalIncome = useMemo(() => {
       const income = transactions
         .filter((t: any) => t.type === 'Entrada' && t.category !== 'Saldo Inicial')
         .reduce((acc: number, curr: any) => acc + curr.amount, 0);
-      return income > 0 ? income : 1; // Evita divisão por zero
+      return income > 0 ? income : 1;
   }, [transactions]);
 
-  // Filtra categorias corretas baseadas no tipo selecionado
   const availableCategories = useMemo(() => {
      if (filterType === 'Entrada') return settings.incomeCategories || DEFAULT_INCOME_CATS;
      if (filterType === 'Investimento') return settings.investmentCategories || DEFAULT_INVEST_CATS;
@@ -191,8 +189,12 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
   }, [filterType, settings, categories]);
 
   const reportData = useMemo(() => {
-    // 1. FILTRAGEM CRÍTICA: Remove "Saldo Inicial" dos relatórios de fluxo
-    const filteredTrans = transactions.filter((t:any) => t.category !== 'Saldo Inicial');
+    // FILTRAGEM RIGOROSA: Remove "Saldo Inicial" dos gráficos de fluxo
+    const filteredTrans = transactions.filter((t:any) => 
+        t.category !== 'Saldo Inicial' && 
+        !t.description.includes('Saldo Inicial') &&
+        !t.description.includes('Ajuste Manual')
+    );
 
     let chartData: any[] = [];
     let centerValue = 0;
@@ -201,7 +203,6 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
     let centerSubtext = null;
 
     if (filterType === 'Tudo') {
-        // --- VISÃO GERAL (MACRO) ---
         const totalReceita = filteredTrans.filter((t:any) => t.type === 'Entrada').reduce((acc:number, curr:any) => acc + curr.amount, 0);
         const totalDespesa = filteredTrans.filter((t:any) => t.type === 'Saída').reduce((acc:number, curr:any) => acc + curr.amount, 0);
         const totalInvestimento = filteredTrans.filter((t:any) => t.type === 'Investimento').reduce((acc:number, curr:any) => acc + curr.amount, 0);
@@ -217,9 +218,7 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
         ].filter(d => d.value > 0);
 
     } else {
-        // --- VISÃO ESPECÍFICA ---
         let items = filteredTrans.filter((t:any) => t.type === filterType);
-
         if (filterCat !== 'Todas') {
             items = items.filter((t:any) => t.category === filterCat);
         }
@@ -239,24 +238,20 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
         }));
     }
 
-    // Lógica para mostrar detalhes da fatia clicada no centro
     if (activeIndex !== null && chartData[activeIndex]) {
         const selected = chartData[activeIndex];
         let percentBase = 0;
         let suffix = "";
 
-        // LÓGICA DE PORCENTAGEM CORRIGIDA:
-        // Se for "Tudo", base é a RENDA (totalIncome).
         if (filterType === 'Tudo') {
             if (selected.name === 'Receitas') {
-                percentBase = selected.value; // Receita sobre Receita é 100%
+                percentBase = selected.value;
                 suffix = " das Entradas";
             } else {
                 percentBase = totalIncome;
                 suffix = " da Renda";
             }
         } else {
-            // No detalhe (ex: só Despesas), a porcentagem é sobre o total daquele grupo
             percentBase = chartData.reduce((acc, curr) => acc + curr.value, 0);
             suffix = " do Total";
         }
@@ -276,8 +271,7 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
   }, [transactions, filterType, filterCat, activeIndex, darkMode, totalIncome]);
 
   const detailedList = useMemo(() => {
-    // Filtra para não mostrar Saldo Inicial na lista
-    let list = transactions.filter((t:any) => t.category !== 'Saldo Inicial');
+    let list = transactions.filter((t:any) => t.category !== 'Saldo Inicial' && !t.description.includes('Saldo Inicial'));
     
     if (filterType !== 'Tudo') {
         list = list.filter((t:any) => t.type === filterType);
@@ -438,7 +432,7 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
 
   useEffect(() => {
      if (transaction.installment) {
-         setAmount(transaction.amount); // Já mostra o valor da parcela, não o total
+         setAmount(transaction.amount); 
      } else {
          setAmount(transaction.amount);
      }
@@ -527,8 +521,8 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
   );
 };
 
-// --- (CardsScreen) ---
-const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDeleteCard, darkMode }: any) => {
+// --- (CardsScreen - ATUALIZADO) ---
+const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDeleteCard, darkMode, onSelectTransaction }: any) => {
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
@@ -537,6 +531,7 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
   const [editClosing, setEditClosing] = useState('');
   const [editDue, setEditDue] = useState('');
 
+  // Helper para somar fatura
   const getInvoiceTotal = (cardId: string, monthKey: string) => {
     return transactions
       .filter((t: Transaction) => t.cardId === cardId && t.month === monthKey && t.type === 'Saída')
@@ -544,6 +539,12 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
   };
 
   const activeCard = cards.find((c: CardData) => c.id === selectedCardId);
+
+  // Lista de transações da fatura atual
+  const currentInvoiceList = useMemo(() => {
+      if (!selectedCardId) return [];
+      return transactions.filter((t: Transaction) => t.cardId === selectedCardId && t.month === currentMonthKey && t.type === 'Saída');
+  }, [selectedCardId, currentMonthKey, transactions]);
 
   const startEditing = () => {
     if(activeCard) {
@@ -648,6 +649,29 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
             </div>
          </div>
 
+         {/* --- NOVA SEÇÃO: TRANSAÇÕES DA FATURA --- */}
+         <div>
+            <h3 className={`font-bold mb-4 text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Transações da Fatura</h3>
+            <div className="space-y-2 mb-6">
+                {currentInvoiceList.length === 0 ? (
+                    <p className="text-xs text-gray-400">Nenhuma compra nesta fatura.</p>
+                ) : (
+                    currentInvoiceList.map((t: Transaction) => (
+                        <div onClick={() => onSelectTransaction(t, 'cards')} key={t.id} className={`flex justify-between items-center p-3 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+                            <div>
+                                <p className={`text-xs font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{t.description}</p>
+                                <p className="text-[10px] text-gray-400">{formatDate(t.date)} • {t.category}</p>
+                            </div>
+                            <div className="text-right">
+                                <p className={`text-xs font-bold text-rose-500`}>-{formatCurrency(t.amount)}</p>
+                                {t.installment && <p className="text-[9px] text-blue-400">{t.installment.current}/{t.installment.total}</p>}
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+         </div>
+
          <div>
             <h3 className={`font-bold mb-4 text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Próximas Faturas</h3>
             <div className="space-y-3">
@@ -689,7 +713,12 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
                         <p className="text-xs text-gray-400">{card.holder}</p>
                       </div>
                    </div>
-                   <ChevronRight size={20} className="text-gray-300"/>
+                   
+                   {/* NOVO: EXIBE O VALOR DA FATURA ATUAL NO CARD */}
+                   <div className="text-right">
+                       <p className="text-[10px] text-gray-400 uppercase font-bold">Fatura Atual</p>
+                       <p className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{formatCurrency(invoice)}</p>
+                   </div>
                 </div>
                 <div>
                    <div className="flex justify-between text-xs mb-1">
@@ -888,7 +917,7 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
         const val = parseAmount(amount);
         let cardIdToSave = null;
         
-        // Se for Cartão (à vista ou parcelado), salva o ID do cartão para aparecer na fatura
+        // CORREÇÃO: Salva o ID do cartão se o método for Cartão (mesmo à vista)
         if (method === 'Cartão' && type === 'Saída') {
             cardIdToSave = selectedCard;
         }
@@ -896,23 +925,17 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
         if (type === 'Saída' && method === 'Cartão') {
            const parentId = generateId();
            const batch = [];
-           
-           // Encontra dados do cartão para verificar dia de fechamento
            const selectedCardData = cards.find((c:any) => c.id === selectedCard);
 
            for(let i = 0; i < installments; i++) {
               let d = new Date(date);
-              d.setDate(d.getDate() + 1); // Ajuste de fuso
+              d.setDate(d.getDate() + 1); // Fuso
               d.setMonth(d.getMonth() + i);
 
-              // LÓGICA DE FECHAMENTO: Se a data da compra for >= dia do fechamento, joga para o próximo mês
+              // LÓGICA DE FECHAMENTO: Se a data da compra for >= fechamento, joga para o próximo mês
               if (selectedCardData) {
-                  const dayOfPurchase = new Date(date).getDate(); // Dia original da compra
-                  // Aplica regra apenas na primeira parcela (e consequentemente nas seguintes pelo +i)
-                  // Se dia da compra >= dia fechamento, fatura vira.
-                  // Porém, a lógica correta é: Se hoje é dia 8 e fecha dia 7, a cobrança é mês que vem.
-                  // Se installment=1 (à vista), d.setMonth(d.getMonth() + 1).
-                  // Simplificação: Se a data base da parcela cair em dia >= fechamento, joga pro proximo mes.
+                  const dayOfPurchase = new Date(date).getDate(); 
+                  // Aplica na primeira parcela (e seguintes pelo +i). Se comprou depois do fechamento, vira a fatura.
                   if (dayOfPurchase >= selectedCardData.closingDay) {
                       d.setMonth(d.getMonth() + 1);
                   }
@@ -934,7 +957,6 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
            }
            await onSave(batch);
         } else {
-           // Dinheiro ou Outros
            await onSave([{ id: generateId(), description: desc, amount: val, type, category: cat, date, month: date.slice(0, 7), paymentMethod: method, cardId: cardIdToSave }]);
         }
     } catch (error) { alert("Erro ao salvar."); setIsSaving(false); }
@@ -966,14 +988,12 @@ export default function App() {
   const [cards, setCards] = useState<CardData[]>(INITIAL_CARDS);
   const [categories, setCategories] = useState<string[]>(DEFAULT_EXPENSE_CATS);
   const [settings, setSettings] = useState<UserSettings>({ monthlyIncome: 5000, goals: [], darkMode: false, categoryLimits: {} });
-  
   const [screen, setScreen] = useState<AppScreen>(AppScreen.Home);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  
-  const [editingTransaction, setEditingTransaction] = useState<{data: Transaction, mode: 'home'|'reports'} | null>(null);
+  const [editingTransaction, setEditingTransaction] = useState<{data: Transaction, mode: 'home'|'reports'|'cards'} | null>(null);
 
   const monthsRef = useRef<HTMLDivElement>(null);
 
@@ -995,8 +1015,7 @@ export default function App() {
 
   useEffect(() => {
     return onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setLoading(false);
+      setUser(u); setLoading(false);
       if(u) {
         onSnapshot(query(collection(db, `users/${u.uid}/transactions`)), (snap) => {
           const data = snap.docs.map(d => d.data() as Transaction);
@@ -1014,7 +1033,7 @@ export default function App() {
   const monthDetails = useMemo(() => {
     let inc = 0, exp = 0;
     filteredTransactions.forEach(t => {
-        // LÓGICA DE SALDO: Ignora "Saldo Inicial" do fluxo mensal da conta corrente
+        // CORREÇÃO: Ignora "Saldo Inicial" no fluxo de caixa (saldo da conta)
         if (t.category === 'Saldo Inicial' || t.description.includes('Saldo Inicial')) return;
         if(t.type === 'Entrada') inc += t.amount;
         else exp += t.amount;
@@ -1121,7 +1140,7 @@ export default function App() {
       <div className="flex-1 overflow-y-auto pt-4 scrollbar-hide">
         {screen === AppScreen.Home && <Home transactions={filteredTransactions} monthDetails={monthDetails} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'home'})} onTransferBalance={transferBalance} darkMode={isDark} />}
         {screen === AppScreen.Reports && <Reports transactions={filteredTransactions} categories={categories} settings={settings} darkMode={isDark} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'reports'})} />}
-        {screen === AppScreen.Cards && <CardsScreen cards={cards} transactions={rawTransactions} currentMonthKey={selectedMonthKey} onSaveCard={saveCard} onDeleteCard={deleteCard} darkMode={isDark} />}
+        {screen === AppScreen.Cards && <CardsScreen cards={cards} transactions={rawTransactions} currentMonthKey={selectedMonthKey} onSaveCard={saveCard} onDeleteCard={deleteCard} darkMode={isDark} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'cards'})} />}
         {screen === AppScreen.Profile && <Profile user={user} categories={categories} settings={settings} transactions={rawTransactions} onUpdateSettings={updateSettings} onAddCategory={(c:string)=>updateCategories([...categories,c])} onDeleteCategory={(c:string)=>updateCategories(categories.filter(x=>x!==c))} onLogout={()=>signOut(auth)} monthlySavings={monthDetails.balance} darkMode={isDark} onAddInitialBalance={addInitialBalance} />}
       </div>
       {screen !== AppScreen.Add && (
