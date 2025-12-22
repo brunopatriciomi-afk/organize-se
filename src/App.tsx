@@ -1,83 +1,24 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
-  LineChart, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip as RechartsTooltip, 
-  ResponsiveContainer, 
-  PieChart, 
-  Pie, 
-  Cell, 
-  Label 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Label
 } from 'recharts';
 import { 
-  LayoutDashboard, 
-  CreditCard, 
-  PieChart as PieChartIcon, 
-  User as UserIcon, 
-  Plus, 
-  ChevronLeft, 
-  ChevronRight, 
-  ChevronDown, 
-  Wallet, 
-  ArrowUpCircle, 
-  ArrowDownCircle, 
-  Trash2, 
-  Edit2, 
-  X, 
-  Loader2, 
-  LogIn, 
-  LogOut, 
-  Filter, 
-  Settings, 
-  Target, 
-  DollarSign, 
-  AlertCircle, 
-  Check, 
-  AlertTriangle, 
-  Moon, 
-  Sun, 
-  List, 
-  Zap, 
-  TrendingUp, 
-  ArrowRightCircle
+  LayoutDashboard, CreditCard, PieChart as PieChartIcon, User as UserIcon, 
+  Plus, ChevronLeft, ChevronRight, ChevronDown, Wallet, ArrowUpCircle, ArrowDownCircle, 
+  Trash2, Edit2, X, Loader2, LogIn, LogOut, Filter, Settings, Target, DollarSign, AlertCircle, Check, AlertTriangle, Moon, Sun, List, Zap, TrendingUp, ArrowRightCircle
 } from 'lucide-react';
 import { 
-  collection, 
-  doc, 
-  setDoc, 
-  deleteDoc, 
-  onSnapshot, 
-  query, 
-  writeBatch, 
-  where, 
-  getDocs 
+  collection, doc, setDoc, deleteDoc, onSnapshot, query, writeBatch, where, getDocs 
 } from 'firebase/firestore';
 import { 
-  signInWithEmailAndPassword, 
-  onAuthStateChanged, 
-  signOut, 
-  type User 
+  signInWithEmailAndPassword, onAuthStateChanged, signOut, type User 
 } from 'firebase/auth';
 import { db, auth } from './firebaseConfig';
 
-// --- 1. TIPOS E INTERFACES ---
+// --- 1. TIPOS ---
+export enum AppScreen { Home, Reports, Cards, Profile, Add }
 
-export enum AppScreen { 
-  Home, 
-  Reports, 
-  Cards, 
-  Profile, 
-  Add 
-}
-
-export interface Goal { 
-  id: string; 
-  name: string; 
-  amount: number; 
-}
+export interface Goal { id: string; name: string; amount: number; }
 
 export interface UserSettings {
   monthlyIncome: number;
@@ -114,12 +55,8 @@ export interface Transaction {
   transferId?: string;
 }
 
-// --- CONSTANTES GLOBAIS ---
-
-const DEFAULT_EXPENSE_CATS = [
-  'Alimentação', 'Moradia', 'Transporte', 'Lazer', 'Saúde', 
-  'Educação', 'Compras', 'Serviços', 'Assinaturas'
-];
+// Categorias Padrão
+const DEFAULT_EXPENSE_CATS = ['Alimentação', 'Moradia', 'Transporte', 'Lazer', 'Saúde', 'Educação', 'Compras', 'Serviços', 'Assinaturas'];
 const DEFAULT_INCOME_CATS = ['Salário', 'Bônus', 'Dinheiro Extra', 'Reembolso'];
 const DEFAULT_INVEST_CATS = ['Reserva', 'Casa', 'Carro', 'Aposentadoria'];
 
@@ -131,60 +68,46 @@ const INITIAL_CARDS: CardData[] = [
 const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const MONTHS_FULL = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
+// PALETA DE CORES
 const CHART_COLORS = [
-  '#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', 
-  '#EC4899', '#06B6D4', '#6366F1', '#84CC16', '#F43F5E', '#14B8A6'
+  '#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#6366F1', '#84CC16', '#F43F5E', '#14B8A6'
 ];
 
-// --- 2. FUNÇÕES UTILITÁRIAS ---
-
-const formatCurrency = (val: number) => {
-  return new Intl.NumberFormat('pt-BR', { 
-    style: 'currency', 
-    currency: 'BRL' 
-  }).format(val);
-};
-
+// --- 2. UTILITÁRIOS ---
+const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 const formatDate = (dateString: string) => {
   if(!dateString) return '';
   const [y, m, d] = dateString.split('-');
   return `${d}/${m}`;
 };
-
 const generateId = () => Math.random().toString(36).substr(2, 9);
 const getMonthKey = (date: Date) => date.toISOString().slice(0, 7);
 
 // --- 3. COMPONENTES ---
 
-// === TELA HOME ===
+// --- TELA: HOME ---
 const Home = ({ transactions, monthDetails, onSelectTransaction, onTransferBalance, darkMode }: any) => {
   return (
     <div className="space-y-6 p-4 pb-32">
       <div className={`rounded-[32px] p-6 relative overflow-hidden transition-colors ${darkMode ? 'bg-emerald-900 text-white shadow-none' : 'bg-emerald-600 text-white shadow-xl shadow-emerald-100/50'}`}>
-        <div className="absolute top-0 right-0 p-4 opacity-10">
-          <Wallet size={120} />
-        </div>
+        <div className="absolute top-0 right-0 p-4 opacity-10"><Wallet size={120} /></div>
         <p className="text-emerald-100 font-medium mb-1 text-sm">Saldo em Conta</p>
         
-        {/* CORREÇÃO: Saldo vermelho se negativo */}
+        {/* CORREÇÃO: Saldo Vermelho se Negativo */}
         <h1 className={`text-4xl font-bold mb-8 ${monthDetails.balance < 0 ? 'text-rose-300' : ''}`}>
             {formatCurrency(monthDetails.balance)}
         </h1>
-
+        
         <div className="flex gap-4">
           <div className="flex items-center gap-3 bg-black/20 px-3 py-3 rounded-2xl flex-1 backdrop-blur-sm min-w-0">
-            <div className="p-1.5 bg-emerald-400/20 rounded-full shrink-0">
-              <ArrowUpCircle size={18} className="text-emerald-200"/>
-            </div>
+            <div className="p-1.5 bg-emerald-400/20 rounded-full shrink-0"><ArrowUpCircle size={18} className="text-emerald-200"/></div>
             <div className="min-w-0 overflow-hidden">
               <p className="text-[9px] uppercase text-emerald-200 font-bold tracking-wider truncate">Entradas</p>
               <p className="font-bold text-sm truncate">{formatCurrency(monthDetails.income)}</p>
             </div>
           </div>
           <div className="flex items-center gap-3 bg-black/20 px-3 py-3 rounded-2xl flex-1 backdrop-blur-sm min-w-0">
-            <div className="p-1.5 bg-rose-400/20 rounded-full shrink-0">
-              <ArrowDownCircle size={18} className="text-rose-200"/>
-            </div>
+            <div className="p-1.5 bg-rose-400/20 rounded-full shrink-0"><ArrowDownCircle size={18} className="text-rose-200"/></div>
             <div className="min-w-0 overflow-hidden">
               <p className="text-[9px] uppercase text-rose-200 font-bold tracking-wider truncate">Saídas</p>
               <p className="font-bold text-sm truncate">{formatCurrency(monthDetails.expenses)}</p>
@@ -193,10 +116,7 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, onTransferBalan
         </div>
         
         {monthDetails.balance > 0 && (
-            <button 
-              onClick={() => onTransferBalance(monthDetails.balance)} 
-              className="mt-6 w-full py-3 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-bold flex items-center justify-center gap-2 backdrop-blur-sm transition-all"
-            >
+            <button onClick={() => onTransferBalance(monthDetails.balance)} className="mt-6 w-full py-3 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-bold flex items-center justify-center gap-2 backdrop-blur-sm transition-all">
                 <ArrowRightCircle size={16}/> Transferir Sobra para Mês Seguinte
             </button>
         )}
@@ -206,9 +126,8 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, onTransferBalan
         <h2 className={`text-lg font-bold mb-4 px-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Histórico (Últimos 5)</h2>
         <div className="space-y-3">
           {transactions.slice(0, 5).map((t: Transaction) => {
-             // CORREÇÃO: Mostra o valor da transação individual/parcela
-             const displayAmount = t.amount; 
-             
+             // CORREÇÃO: Mostra valor da parcela
+             const displayAmount = t.amount;
              let iconColor = t.type === 'Entrada' ? (darkMode ? 'text-emerald-400 bg-emerald-900/50' : 'text-emerald-600 bg-emerald-100') : (darkMode ? 'text-rose-400 bg-rose-900/50' : 'text-rose-600 bg-rose-50');
              let icon = t.type === 'Entrada' ? <ArrowUpCircle size={20}/> : <ArrowDownCircle size={20}/>;
              
@@ -218,11 +137,7 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, onTransferBalan
              }
 
              return (
-              <div 
-                key={t.id} 
-                onClick={() => onSelectTransaction(t, 'home')} 
-                className={`group flex justify-between items-center p-4 rounded-2xl shadow-sm border transition-all cursor-pointer active:scale-95 ${darkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-700' : 'bg-white border-gray-50 hover:border-emerald-100 hover:bg-gray-50'}`}
-              >
+              <div onClick={() => onSelectTransaction(t, 'home')} key={t.id} className={`group flex justify-between items-center p-4 rounded-2xl shadow-sm border transition-all cursor-pointer active:scale-95 ${darkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-700' : 'bg-white border-gray-50 hover:border-emerald-100 hover:bg-gray-50'}`}>
                 <div className="flex items-center gap-3">
                   <div className={`p-3 rounded-full ${iconColor}`}>
                     {icon}
@@ -257,13 +172,13 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, onTransferBalan
   );
 };
 
-// === TELA RELATÓRIOS ===
+// --- TELA: RELATÓRIOS ---
 const Reports = ({ transactions, categories, settings, darkMode, onSelectTransaction }: any) => {
   const [filterType, setFilterType] = useState<'Tudo' | 'Saída' | 'Entrada' | 'Investimento'>('Tudo');
   const [filterCat, setFilterCat] = useState('Todas');
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
-  // Calcula Renda Total para base de % (Ignora Saldo Inicial)
+  // Calcula o TOTAL DE ENTRADAS (RENDA)
   const totalIncome = useMemo(() => {
       const income = transactions
         .filter((t: any) => t.type === 'Entrada' && t.category !== 'Saldo Inicial')
@@ -279,7 +194,7 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
   }, [filterType, settings, categories]);
 
   const reportData = useMemo(() => {
-    // FILTRAGEM RIGOROSA: Remove "Saldo Inicial" dos gráficos de fluxo
+    // FILTRAGEM RIGOROSA
     const filteredTrans = transactions.filter((t:any) => 
         t.category !== 'Saldo Inicial' && 
         !t.description.includes('Saldo Inicial') &&
@@ -321,7 +236,6 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
         centerColor = darkMode ? '#FFFFFF' : '#1F2937';
 
         chartData = Array.from(map, ([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value);
-
         chartData = chartData.map((item, index) => ({
             ...item,
             color: CHART_COLORS[index % CHART_COLORS.length]
@@ -345,16 +259,9 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
             percentBase = chartData.reduce((acc, curr) => acc + curr.value, 0);
             suffix = " do Total";
         }
-
-        const percent = percentBase > 0 ? ((selected.value / percentBase) * 100).toFixed(1) : '0';
         
-        return { 
-            chartData, 
-            centerValue: selected.value, 
-            centerLabel: selected.name, 
-            centerSubtext: `${percent}%${suffix}`, 
-            centerColor: selected.color 
-        };
+        const percent = percentBase > 0 ? ((selected.value / percentBase) * 100).toFixed(1) : '0';
+        return { chartData, centerValue: selected.value, centerLabel: selected.name, centerSubtext: `${percent}%${suffix}`, centerColor: selected.color };
     }
 
     return { chartData, centerValue, centerLabel, centerSubtext, centerColor };
@@ -384,7 +291,6 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
   return (
     <div className="p-4 pb-32">
       <h2 className={`text-xl font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Relatórios</h2>
-      
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}><Filter size={14} className="text-gray-400"/></div>
          <select value={filterType} onChange={e=>handleTypeChange(e.target.value)} className={`px-4 py-2 rounded-xl border text-sm font-bold outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-600'}`}>
@@ -394,7 +300,14 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
             <option value="Entrada">Receitas</option>
          </select>
          <div className="relative">
-            <select value={filterCat} onChange={e=>setFilterCat(e.target.value)} disabled={filterType === 'Tudo'} className={`px-4 py-2 rounded-xl border text-sm font-bold outline-none appearance-none pr-8 ${filterType === 'Tudo' ? 'opacity-50' : ''}`}>
+            <select 
+                value={filterCat} 
+                onChange={e=>setFilterCat(e.target.value)} 
+                disabled={filterType === 'Tudo'}
+                className={`px-4 py-2 rounded-xl border text-sm font-bold outline-none appearance-none pr-8 ${
+                    filterType === 'Tudo' ? 'opacity-50' : ''
+                }`}
+            >
                 <option value="Todas">Todas as Categorias</option>
                 {availableCategories.map((c:string) => <option key={c} value={c}>{c}</option>)}
             </select>
@@ -450,13 +363,13 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
   );
 };
 
-// === MODAL DE EDIÇÃO ===
+// --- MODAL DE EDIÇÃO (CORRIGIDO: ALTERAR CARTÃO E PARCELAS) ---
 const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticipate, onDelete, settings, cards, darkMode }: any) => {
   const [desc, setDesc] = useState(transaction.description);
   const [cat, setCat] = useState(transaction.category);
   const [date, setDate] = useState(transaction.date);
   const [amount, setAmount] = useState(transaction.amount); 
-  const [paymentMethod, setPaymentMethod] = useState(transaction.paymentMethod);
+  const [paymentMethod, setPaymentMethod] = useState<'Dinheiro'|'Cartão'>(transaction.paymentMethod);
   const [selectedCard, setSelectedCard] = useState(transaction.cardId || cards[0]?.id || '');
   const [installments, setInstallments] = useState(transaction.installment?.total || 1);
 
@@ -467,10 +380,11 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
 
   const handleSave = () => {
     const finalAmount = Number(amount);
+    // Lógica para detectar mudança estrutural
     onRewrite(transaction, { 
         description: desc, amount: finalAmount, category: cat, date, paymentMethod, 
         cardId: paymentMethod === 'Cartão' ? selectedCard : null, 
-        installments 
+        installments: paymentMethod === 'Cartão' ? installments : 1
     }, true);
     onClose();
   };
@@ -483,11 +397,13 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
        <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl overflow-y-auto max-h-[90dvh] ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
           <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg">Editar Detalhes</h3><button onClick={onClose}><X size={20} className="text-gray-400"/></button></div>
           <div className="space-y-4">
-             <div><label className="text-[10px] font-bold text-gray-400 uppercase">Valor</label><input type="number" value={amount} onChange={e=>setAmount(Number(e.target.value))} className={`w-full p-3 rounded-xl border font-bold text-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`} /></div>
+             <div><label className="text-[10px] font-bold text-gray-400 uppercase">Valor da Parcela/Total</label><input type="number" value={amount} onChange={e=>setAmount(Number(e.target.value))} className={`w-full p-3 rounded-xl border font-bold text-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`} /></div>
              
              {!transaction.transferId && (
                <>
                  <div><label className="text-[10px] font-bold text-gray-400 uppercase">Pagamento</label><div className="flex gap-2 mt-1"><button onClick={()=>setPaymentMethod('Dinheiro')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${paymentMethod==='Dinheiro' ? 'bg-emerald-100 border-emerald-500 text-emerald-700' : 'border-gray-200 text-gray-400'}`}>Dinheiro</button><button onClick={()=>setPaymentMethod('Cartão')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${paymentMethod==='Cartão' ? 'bg-emerald-100 border-emerald-500 text-emerald-700' : 'border-gray-200 text-gray-400'}`}>Cartão</button></div></div>
+                 
+                 {/* CORREÇÃO: Seletores de Cartão e Parcela */}
                  {paymentMethod === 'Cartão' && (
                      <div className="flex gap-2 animate-in fade-in">
                         <div className="flex-1"><label className="text-[10px] font-bold text-gray-400 uppercase">Cartão</label><select value={selectedCard} onChange={e=>setSelectedCard(e.target.value)} className={`w-full p-2 rounded-xl border text-sm ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`}>{cards.map((c:any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
@@ -504,14 +420,14 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
           <div className="flex flex-col gap-3 mt-8">
              <button onClick={handleSave} className="w-full py-4 bg-emerald-600 text-white font-bold rounded-xl">Salvar Alterações</button>
              {transaction.installment && <button onClick={handleAnticipateClick} className="w-full py-3 bg-indigo-50 text-indigo-600 font-bold rounded-xl">Antecipar Parcelas</button>}
-             <button onClick={handleDeleteAll} className="w-full py-3 bg-rose-50 text-rose-500 font-bold rounded-xl">Excluir</button>
+             <button onClick={() => onDelete(transaction)} className="w-full py-3 bg-rose-50 text-rose-500 font-bold rounded-xl">Excluir</button>
           </div>
        </div>
     </div>
   );
 };
 
-// === CARDS SCREEN ===
+// --- (CardsScreen - ATUALIZADO) ---
 const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDeleteCard, darkMode, onSelectTransaction }: any) => {
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -526,7 +442,6 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
   };
 
   const activeCard = cards.find((c: CardData) => c.id === selectedCardId);
-
   const currentInvoiceList = useMemo(() => {
       if (!selectedCardId) return [];
       return transactions.filter((t: Transaction) => t.cardId === selectedCardId && t.month === currentMonthKey && t.type === 'Saída');
@@ -592,7 +507,7 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
          <div>
             <h3 className={`font-bold mb-4 text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Transações da Fatura</h3>
             <div className="space-y-2 mb-6">
-                {currentInvoiceList.length === 0 ? <p className="text-xs text-gray-400 text-center py-4">Nenhuma compra.</p> : currentInvoiceList.map((t: Transaction) => (
+                {currentInvoiceList.length === 0 ? <p className="text-xs text-gray-400 text-center py-4">Nenhuma compra nesta fatura.</p> : currentInvoiceList.map((t: Transaction) => (
                     <div onClick={() => onSelectTransaction(t, 'cards')} key={t.id} className={`flex justify-between items-center p-3 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
                         <div><p className={`text-xs font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{t.description}</p><p className="text-[10px] text-gray-400">{formatDate(t.date)} • {t.category}</p></div>
                         <div className="text-right"><p className="text-xs font-bold text-rose-500">-{formatCurrency(t.amount)}</p>{t.installment && <p className="text-[9px] text-blue-400">{t.installment.current}/{t.installment.total}</p>}</div>
@@ -729,6 +644,7 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
     const val = parseFloat(amount.replace(',', '.'));
     let cardIdToSave = null;
     
+    // Se for Cartão, salva o ID do cartão para vincular à fatura
     if (method === 'Cartão' && type === 'Saída') cardIdToSave = selectedCard;
 
     if (type === 'Saída' && method === 'Cartão') {
@@ -741,8 +657,10 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
           d.setDate(d.getDate() + 1); // Fuso
           d.setMonth(d.getMonth() + i);
 
+          // LÓGICA DE FECHAMENTO (INTELIGENTE)
           if (selectedCardData) {
               const dayOfPurchase = new Date(date).getDate(); 
+              // Se a compra foi feita no dia ou depois do fechamento, joga para a próxima fatura
               if (dayOfPurchase >= selectedCardData.closingDay) {
                   d.setMonth(d.getMonth() + 1);
               }
@@ -759,16 +677,16 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
   return (
     <div className={`fixed inset-0 z-50 flex flex-col ${darkMode ? 'bg-gray-900 text-white' : 'bg-white'}`}>
       <div className="p-4 flex justify-between items-center border-b"><button onClick={onCancel}><X size={24}/></button><h2 className="font-bold text-lg">Nova Transação</h2><div className="w-6"/></div>
-      <div className="p-6 space-y-6">
+      <div className="p-6 space-y-6 overflow-y-auto">
         <input type="tel" value={amount} onChange={e=>setAmount(e.target.value)} className="text-5xl font-bold w-full bg-transparent outline-none" placeholder="0,00" autoFocus />
-        <div className="flex p-1 bg-gray-100 rounded-xl"><button onClick={()=>setType('Saída')} className={`flex-1 py-3 rounded-lg font-bold ${type==='Saída'?'bg-white shadow-sm text-rose-500':'text-gray-400'}`}>Despesa</button><button onClick={()=>setType('Entrada')} className={`flex-1 py-3 rounded-lg font-bold ${type==='Entrada'?'bg-white shadow-sm text-emerald-500':'text-gray-400'}`}>Receita</button><button onClick={()=>setType('Investimento')} className={`flex-1 py-3 rounded-lg font-bold ${type==='Investimento'?'bg-white shadow-sm text-blue-500':'text-gray-400'}`}>Investir</button></div>
-        <input value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Ex: Mercado" className="w-full p-3 border rounded-xl" />
+        <div className="flex p-1 bg-gray-100 rounded-xl"><button onClick={()=>setType('Saída')} className={`flex-1 py-3 rounded-lg font-bold ${type==='Saída'?'bg-white text-rose-500':'text-gray-400'}`}>Despesa</button><button onClick={()=>setType('Entrada')} className={`flex-1 py-3 rounded-lg font-bold ${type==='Entrada'?'bg-white text-emerald-500':'text-gray-400'}`}>Receita</button><button onClick={()=>setType('Investimento')} className={`flex-1 py-3 rounded-lg font-bold ${type==='Investimento'?'bg-white text-blue-500':'text-gray-400'}`}>Investir</button></div>
+        <input value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Descrição" className="w-full p-3 border rounded-xl text-black" />
         <div className="space-y-2"><label className="text-xs font-bold uppercase">Data</label><input type="date" value={date} onChange={e=>setDate(e.target.value)} className="w-full p-3 border rounded-xl" /></div>
-        {type === 'Saída' && (<div className="flex gap-2"><button onClick={() => setMethod('Dinheiro')} className={`flex-1 p-3 rounded-xl border ${method === 'Dinheiro' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold' : 'border-gray-200'}`}>Dinheiro/Pix</button><button onClick={() => setMethod('Cartão')} className={`flex-1 p-3 rounded-xl border ${method === 'Cartão' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold' : 'border-gray-200'}`}>Cartão</button></div>)}
+        {type === 'Saída' && (<div className="flex gap-2"><button onClick={() => setMethod('Dinheiro')} className={`flex-1 p-3 rounded-xl border ${method === 'Dinheiro' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold' : 'border-gray-200'}`}>Dinheiro</button><button onClick={() => setMethod('Cartão')} className={`flex-1 p-3 rounded-xl border ${method === 'Cartão' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold' : 'border-gray-200'}`}>Cartão</button></div>)}
         {method === 'Cartão' && type === 'Saída' && (
              <div className="flex gap-2 animate-in fade-in">
-                <select value={selectedCard} onChange={e=>setSelectedCard(e.target.value)} className="flex-1 p-3 border rounded-xl">{cards.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-                <select value={installments} onChange={e=>setInstallments(Number(e.target.value))} className="w-24 p-3 border rounded-xl"><option value={1}>1x</option>{[2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n}x</option>)}</select>
+                <select value={selectedCard} onChange={e=>setSelectedCard(e.target.value)} className="flex-1 p-3 border rounded-xl text-black">{cards.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+                <select value={installments} onChange={e=>setInstallments(Number(e.target.value))} className="w-24 p-3 border rounded-xl text-black"><option value={1}>1x</option>{[2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n}x</option>)}</select>
              </div>
         )}
         <div className="flex flex-wrap gap-2">{currentCategories.map((c: string) => (<button key={c} onClick={()=>setCat(c)} className={`px-4 py-2 rounded-full border text-xs font-bold ${cat===c?'bg-emerald-600 text-white':'text-gray-400'}`}>{c}</button>))}</div>
@@ -792,6 +710,20 @@ export default function App() {
 
   const monthsRef = useRef<HTMLDivElement>(null);
   const selectedMonthKey = getMonthKey(currentDate);
+  const currentYear = currentDate.getFullYear();
+  const currentMonthIdx = currentDate.getMonth();
+
+  useEffect(() => {
+    let meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.setAttribute('name', 'viewport');
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+    document.body.style.touchAction = 'pan-x pan-y';
+    document.body.style.overscrollBehaviorY = 'none';
+  }, []);
 
   useEffect(() => {
     return onAuthStateChanged(auth, (u) => {
@@ -799,7 +731,7 @@ export default function App() {
       if(u) {
         onSnapshot(query(collection(db, `users/${u.uid}/transactions`)), (s) => setRawTransactions(s.docs.map(d => d.data() as Transaction).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())));
         onSnapshot(doc(db, `users/${u.uid}/settings`, 'cards'), (s) => { if(s.exists()) setCards(s.data().list); });
-        onSnapshot(doc(db, `users/${u.uid}/settings`, 'config'), (s) => { if(s.exists()) { setCategories(s.data().categories); setSettings(s.data().userSettings); } });
+        onSnapshot(doc(db, `users/${u.uid}/settings`, 'config'), (s) => { if(s.exists()) { const d = snap.data(); if(d.categories) setCategories(d.categories); if(d.userSettings) setSettings(d.userSettings); } });
       }
     });
   }, []);
@@ -817,55 +749,113 @@ export default function App() {
     return { income: inc, expenses: exp, balance: inc - exp };
   }, [filteredTransactions]);
 
-  const addInitialBalance = async (amount: number, category: string) => {
-    if(!user) return;
-    const id = generateId(); const today = new Date().toISOString().split('T')[0];
-    const newTrans: Transaction = { id, description: 'Saldo Inicial / Ajuste Manual', amount, type: 'Investimento', category: category, date: today, month: today.slice(0, 7), paymentMethod: 'Dinheiro' };
-    await setDoc(doc(db, `users/${user.uid}/transactions`, id), newTrans);
-  };
+  useEffect(() => {
+    if (monthsRef.current) {
+        const scrollPos = (currentMonthIdx * 70) - (window.innerWidth / 2) + 35;
+        monthsRef.current.scrollTo({ left: scrollPos, behavior: 'smooth' });
+    }
+  }, [currentMonthIdx, screen]);
 
+  const handleLogin = async (e:any) => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, "teste@teste.com", "123456"); } catch(e) { alert("Erro login"); } };
+  
   const addTransactions = async (newTrans: Transaction[]) => {
-    if(!user) return; const batch = writeBatch(db);
+    if(!user) return;
+    const batch = writeBatch(db);
     newTrans.forEach(t => batch.set(doc(db, `users/${user.uid}/transactions`, t.id), t));
-    await batch.commit(); setScreen(AppScreen.Home);
+    await batch.commit();
+    setScreen(AppScreen.Home);
   };
+  const transferBalance = async (balance: number) => {
+      if(!user) return;
+      if(balance <= 0) return alert("Não há saldo positivo para transferir.");
+      const batch = writeBatch(db);
+      const transferId = generateId();
+      const lastDayCurrent = new Date(currentYear, currentMonthIdx + 1, 0); 
+      const t1Id = generateId();
+      batch.set(doc(db, `users/${user.uid}/transactions`, t1Id), { id: t1Id, description: 'Transferência para Mês Seguinte', amount: balance, type: 'Saída', category: 'Transferência', date: lastDayCurrent.toISOString().split('T')[0], month: selectedMonthKey, paymentMethod: 'Dinheiro', transferId });
+      const firstDayNext = new Date(currentYear, currentMonthIdx + 1, 1);
+      const t2Id = generateId();
+      batch.set(doc(db, `users/${user.uid}/transactions`, t2Id), { id: t2Id, description: 'Sobra do Mês Anterior', amount: balance, type: 'Entrada', category: 'Saldo Anterior', date: firstDayNext.toISOString().split('T')[0], month: getMonthKey(firstDayNext), paymentMethod: 'Dinheiro', transferId });
+      await batch.commit();
+      alert("Saldo transferido com sucesso!");
+  };
+  const rewriteTransaction = async (oldT: Transaction, newData: any, isSimpleUpdate = false) => {
+     if(!user) return;
+     const batch = writeBatch(db);
+     if (isSimpleUpdate) { batch.update(doc(db, `users/${user.uid}/transactions`, oldT.id), newData); await batch.commit(); return; }
+     if (oldT.transferId) { const pair = rawTransactions.filter(t => t.transferId === oldT.transferId); pair.forEach(p => batch.delete(doc(db, `users/${user.uid}/transactions`, p.id))); } else if (oldT.parentId) { const siblings = rawTransactions.filter(rt => rt.parentId === oldT.parentId); siblings.forEach(s => batch.delete(doc(db, `users/${user.uid}/transactions`, s.id))); } else { batch.delete(doc(db, `users/${user.uid}/transactions`, oldT.id)); }
+     if (newData.paymentMethod === 'Cartão' && newData.installments > 1) {
+        const parentId = generateId();
+        const baseDate = new Date(newData.date);
+        for(let i = 0; i < newData.installments; i++) { const currentInstDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, baseDate.getDate() + 1); const newId = generateId(); batch.set(doc(db, `users/${user.uid}/transactions`, newId), { id: newId, description: `${newData.description} (${i+1}/${newData.installments})`, amount: newData.amount / newData.installments, type: oldT.type, category: newData.category, date: currentInstDate.toISOString().split('T')[0], month: currentInstDate.toISOString().slice(0, 7), paymentMethod: 'Cartão', cardId: newData.cardId, installment: { current: i+1, total: newData.installments }, parentId }); }
+     } else {
+        const newId = generateId();
+        batch.set(doc(db, `users/${user.uid}/transactions`, newId), { id: newId, description: newData.description, amount: newData.amount, type: oldT.type, category: newData.category, date: newData.date, month: newData.date.slice(0, 7), paymentMethod: 'Dinheiro', cardId: null });
+     }
+     await batch.commit();
+  };
+  const anticipateTransaction = async (t: Transaction) => {
+      if(!user || !t.parentId || !t.installment) return;
+      const batch = writeBatch(db);
+      const currentNum = t.installment.current;
+      const futureInstallments = rawTransactions.filter(rt => rt.parentId === t.parentId && rt.installment && rt.installment.current >= currentNum);
+      const totalRemaining = futureInstallments.reduce((acc, curr) => acc + curr.amount, 0);
+      futureInstallments.forEach(inst => { batch.delete(doc(db, `users/${user.uid}/transactions`, inst.id)); });
+      const newId = generateId();
+      const today = new Date().toISOString().split('T')[0];
+      batch.set(doc(db, `users/${user.uid}/transactions`, newId), { id: newId, description: `${t.description.split('(')[0]} (Antecipação)`, amount: totalRemaining, type: 'Saída', category: t.category, date: today, month: today.slice(0, 7), paymentMethod: 'Dinheiro', cardId: t.cardId });
+      await batch.commit();
+  };
+  const deleteTransaction = async (t: Transaction) => {
+    if(!user) return;
+    const batch = writeBatch(db);
+    if (t.transferId) { const pair = rawTransactions.filter(tr => tr.transferId === t.transferId); pair.forEach(p => batch.delete(doc(db, `users/${user.uid}/transactions`, p.id))); } else if (t.installment && t.parentId) { const allInstallments = rawTransactions.filter(rt => rt.parentId === t.parentId); allInstallments.forEach(inst => { batch.delete(doc(db, `users/${user.uid}/transactions`, inst.id)); }); } else { batch.delete(doc(db, `users/${user.uid}/transactions`, t.id)); }
+    await batch.commit();
+  };
+  const addInitialBalance = async (amount: number, category: string) => {
+      if(!user) return;
+      const id = generateId();
+      const today = new Date().toISOString().split('T')[0];
+      const newTrans: Transaction = { id, description: 'Saldo Inicial / Ajuste Manual', amount, type: 'Investimento', category: category, date: today, month: today.slice(0, 7), paymentMethod: 'Dinheiro' };
+      await setDoc(doc(db, `users/${user.uid}/transactions`, id), newTrans);
+  };
+  const updateSettings = async (newSettings: UserSettings) => { if(!user) return; setSettings(newSettings); await setDoc(doc(db, `users/${user.uid}/settings`, 'config'), { userSettings: newSettings }, { merge: true }); };
+  const updateCategories = async (newCats: string[]) => { if(!user) return; setCategories(newCats); await setDoc(doc(db, `users/${user.uid}/settings`, 'config'), { categories: newCats }, { merge: true }); };
+  const saveCard = async (updatedCard: CardData) => { if(!user) return; const exists = cards.find(c => c.id === updatedCard.id); const newList = exists ? cards.map(c => c.id === updatedCard.id ? updatedCard : c) : [...cards, updatedCard]; setCards(newList); await setDoc(doc(db, `users/${user.uid}/settings`, 'cards'), { list: newList }, { merge: true }); };
+  const deleteCard = async (cardId: string) => { if(!user) return; const newList = cards.filter(c => c.id !== cardId); setCards(newList); await setDoc(doc(db, `users/${user.uid}/settings`, 'cards'), { list: newList }, { merge: true }); };
 
-  if (loading) return <div className="h-screen flex items-center justify-center text-emerald-500"><Loader2 className="animate-spin" /></div>;
+  const changeMonth = (idx: number) => setCurrentDate(new Date(currentYear, idx, 1));
+  const changeYear = (dir: number) => { const newYear = currentYear + dir; const newMonth = dir > 0 ? 0 : 11; setCurrentDate(new Date(newYear, newMonth, 1)); };
 
-  if (!user) return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gray-50 text-center font-sans">
-      <div className="w-full max-w-sm bg-white p-8 rounded-[32px] shadow-xl">
-        <LogIn size={40} className="mx-auto text-emerald-600 mb-4"/><h1 className="text-2xl font-bold mb-8">Finanças Casal</h1>
-        <button onClick={async () => { try { await signInWithEmailAndPassword(auth, "teste@teste.com", "123456"); } catch(e){ alert("Erro login"); } }} className="w-full bg-emerald-600 text-white font-bold py-4 rounded-xl">Entrar (Demo)</button>
-      </div>
-    </div>
-  );
+  if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-emerald-500"/></div>;
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-gray-50 font-sans"><div className="w-full max-w-sm bg-white p-8 rounded-[32px] shadow-xl border border-gray-100"><div className="flex justify-center mb-8"><div className="bg-emerald-50 p-4 rounded-full"><LogIn size={32} className="text-emerald-600" /></div></div><h1 className="text-2xl font-bold text-center text-gray-900 mb-2">Finanças Casal</h1><p className="text-center text-gray-500 text-xs mb-8 uppercase tracking-wide">Acesse sua conta</p><form onSubmit={handleLogin} className="space-y-4"><div><label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Email</label><input type="email" className="w-full p-3 bg-gray-50 rounded-xl outline-none border border-gray-100 focus:border-emerald-500" value={email} onChange={e=>setEmail(e.target.value)} /></div><div><label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Senha</label><input type="password" className="w-full p-3 bg-gray-50 rounded-xl outline-none border border-gray-100 focus:border-emerald-500" value={password} onChange={e=>setPassword(e.target.value)} /></div><button type="submit" className="w-full bg-emerald-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-emerald-700 transition-all mt-4">Entrar</button></form></div></div>
+    );
+  }
+
+  const isDark = settings.darkMode;
 
   return (
-    <div className={`h-screen w-screen flex flex-col overflow-hidden transition-colors ${settings.darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+    <div className={`h-screen w-screen flex flex-col overflow-hidden relative font-sans transition-colors duration-300 ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
       {screen !== AppScreen.Add && (
-        <div className={`pt-10 pb-2 shadow-sm rounded-b-[32px] ${settings.darkMode ? 'bg-gray-800 text-white' : 'bg-white'}`}>
-           <div className="flex items-center justify-center gap-6 mb-4"><button onClick={() => setCurrentDate(new Date(currentDate.setFullYear(currentDate.getFullYear() - 1)))}><ChevronLeft size={20}/></button><h2 className="text-xl font-bold">{currentDate.getFullYear()}</h2><button onClick={() => setCurrentDate(new Date(currentDate.setFullYear(currentDate.getFullYear() + 1)))}><ChevronRight size={20}/></button></div>
-           <div ref={monthsRef} className="flex overflow-x-auto px-6 gap-3 pb-4 scrollbar-hide">{MONTHS.map((m, idx) => (<button key={m} onClick={() => setCurrentDate(new Date(currentDate.setMonth(idx)))} className={`px-5 py-2 rounded-full text-xs font-bold ${idx === currentDate.getMonth() ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-400'}`}>{m}</button>))}</div>
+        <div className={`pt-10 pb-2 shadow-sm z-10 rounded-b-[32px] ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
+           <div className="flex items-center justify-center gap-6 mb-4"><button onClick={() => changeYear(-1)} className={`p-2 hover:text-emerald-500 ${isDark ? 'text-gray-400' : 'text-gray-400'}`}><ChevronLeft size={20}/></button><h2 className={`text-xl font-bold ${isDark ? 'text-white' : 'text-gray-800'}`}>{currentYear}</h2><button onClick={() => changeYear(1)} className={`p-2 hover:text-emerald-500 ${isDark ? 'text-gray-400' : 'text-gray-400'}`}><ChevronRight size={20}/></button></div>
+           <div ref={monthsRef} className="flex overflow-x-auto px-6 gap-3 pb-4 scrollbar-hide">{MONTHS.map((m, idx) => (<button key={m} onClick={() => changeMonth(idx)} className={`px-5 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap ${idx === currentMonthIdx ? (isDark ? 'bg-emerald-600 text-white shadow-none' : 'bg-emerald-600 text-white shadow-md shadow-emerald-100/50') : (isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-50 text-gray-400 hover:bg-gray-100')}`}>{m}</button>))}</div>
         </div>
       )}
       <div className="flex-1 overflow-y-auto pt-4 scrollbar-hide">
-        {screen === AppScreen.Home && <Home transactions={filteredTransactions} monthDetails={monthDetails} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'home'})} onTransferBalance={()=>{}} darkMode={settings.darkMode} />}
-        {screen === AppScreen.Reports && <Reports transactions={filteredTransactions} categories={categories} settings={settings} darkMode={settings.darkMode} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'reports'})} />}
-        {screen === AppScreen.Cards && <CardsScreen cards={cards} transactions={rawTransactions} currentMonthKey={selectedMonthKey} onSaveCard={()=>{}} onDeleteCard={()=>{}} darkMode={settings.darkMode} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'cards'})} />}
-        {screen === AppScreen.Profile && <Profile user={user} categories={categories} settings={settings} transactions={rawTransactions} onUpdateSettings={(s:any)=>setDoc(doc(db,`users/${user.uid}/settings`,'config'),{userSettings:s},{merge:true})} onLogout={()=>signOut(auth)} monthlySavings={monthDetails.balance} darkMode={settings.darkMode} onAddInitialBalance={addInitialBalance} />}
+        {screen === AppScreen.Home && <Home transactions={filteredTransactions} monthDetails={monthDetails} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'home'})} onTransferBalance={transferBalance} darkMode={isDark} />}
+        {screen === AppScreen.Reports && <Reports transactions={filteredTransactions} categories={categories} settings={settings} darkMode={isDark} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'reports'})} />}
+        {screen === AppScreen.Cards && <CardsScreen cards={cards} transactions={rawTransactions} currentMonthKey={selectedMonthKey} onSaveCard={saveCard} onDeleteCard={deleteCard} darkMode={isDark} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'cards'})} />}
+        {screen === AppScreen.Profile && <Profile user={user} categories={categories} settings={settings} transactions={rawTransactions} onUpdateSettings={updateSettings} onAddCategory={(c:string)=>updateCategories([...categories,c])} onDeleteCategory={(c:string)=>updateCategories(categories.filter(x=>x!==c))} onLogout={()=>signOut(auth)} monthlySavings={monthDetails.balance} darkMode={isDark} onAddInitialBalance={addInitialBalance} />}
       </div>
       {screen !== AppScreen.Add && (
-        <div className={`fixed bottom-0 w-full border-t p-2 pb-6 flex justify-between items-center px-8 ${settings.darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white'}`}>
-          <button onClick={() => setScreen(AppScreen.Home)} className={screen===AppScreen.Home?'text-emerald-500':'text-gray-400'}><LayoutDashboard size={24}/></button>
-          <button onClick={() => setScreen(AppScreen.Cards)} className={screen===AppScreen.Cards?'text-emerald-500':'text-gray-400'}><CreditCard size={24}/></button>
-          <button onClick={() => setScreen(AppScreen.Add)} className="w-14 h-14 bg-emerald-600 rounded-full flex items-center justify-center text-white relative -top-6 shadow-xl"><Plus size={32}/></button>
-          <button onClick={() => setScreen(AppScreen.Reports)} className={screen===AppScreen.Reports?'text-emerald-500':'text-gray-400'}><PieChartIcon size={24}/></button>
-          <button onClick={() => setScreen(AppScreen.Profile)} className={screen===AppScreen.Profile?'text-emerald-500':'text-gray-400'}><UserIcon size={24}/></button>
-        </div>
+        <div className={`fixed bottom-0 w-full border-t p-2 pb-6 flex justify-between items-center px-8 z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-100'}`}><button onClick={() => setScreen(AppScreen.Home)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Home ? 'text-emerald-500' : 'text-gray-400'}`}><LayoutDashboard size={24} strokeWidth={screen===AppScreen.Home?2.5:2} /><span className="text-[10px] font-bold">Início</span></button><button onClick={() => setScreen(AppScreen.Cards)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Cards ? 'text-emerald-500' : 'text-gray-400'}`}><CreditCard size={24} strokeWidth={screen===AppScreen.Cards?2.5:2} /><span className="text-[10px] font-bold">Cartões</span></button><div className="relative -top-8"><button onClick={() => setScreen(AppScreen.Add)} className={`w-14 h-14 rounded-full shadow-xl flex items-center justify-center hover:scale-105 transition-transform ${isDark ? 'bg-emerald-600 text-white shadow-none' : 'bg-emerald-600 text-white shadow-emerald-100/50'}`}><Plus size={32}/></button></div><button onClick={() => setScreen(AppScreen.Reports)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Reports ? 'text-emerald-500' : 'text-gray-400'}`}><PieChartIcon size={24} strokeWidth={screen===AppScreen.Reports?2.5:2} /><span className="text-[10px] font-bold">Relatórios</span></button><button onClick={() => setScreen(AppScreen.Profile)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Profile ? 'text-emerald-500' : 'text-gray-400'}`}><UserIcon size={24} strokeWidth={screen===AppScreen.Profile?2.5:2} /><span className="text-[10px] font-bold">Perfil</span></button></div>
       )}
-      {screen === AppScreen.Add && <AddTransaction categories={categories} cards={cards} settings={settings} monthDetails={monthDetails} onSave={addTransactions} onCancel={() => setScreen(AppScreen.Home)} darkMode={settings.darkMode} />}
-      {editingTransaction && <EditTransactionModal transaction={editingTransaction.data} mode={editingTransaction.mode} categories={categories} settings={settings} cards={cards} darkMode={settings.darkMode} onClose={() => setEditingTransaction(null)} onRewrite={()=>{}} onAnticipate={()=>{}} onDelete={async (t: any)=> {await deleteDoc(doc(db, `users/${user.uid}/transactions`, t.id)); setEditingTransaction(null);}} />}
+      {screen === AppScreen.Add && <AddTransaction categories={categories} cards={cards} settings={settings} monthDetails={monthDetails} onSave={addTransactions} onCancel={() => setScreen(AppScreen.Home)} darkMode={isDark} />}
+      {editingTransaction && (<EditTransactionModal transaction={editingTransaction.data} mode={editingTransaction.mode} categories={categories} settings={settings} cards={cards} darkMode={isDark} onClose={() => setEditingTransaction(null)} onRewrite={rewriteTransaction} onAnticipate={anticipateTransaction} onDelete={deleteTransaction} />)}
     </div>
   );
 }
