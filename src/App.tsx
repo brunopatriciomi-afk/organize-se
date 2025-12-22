@@ -80,7 +80,6 @@ const getMonthKey = (date: Date) => date.toISOString().slice(0, 7);
 const Home = ({ transactions, monthDetails, onSelectTransaction, darkMode }: any) => {
   return (
     <div className="space-y-6 p-4 pb-32">
-      {/* Sombra sutil no light mode (shadow-emerald-100/50) e removida no dark mode */}
       <div className={`rounded-[32px] p-6 relative overflow-hidden transition-colors ${darkMode ? 'bg-emerald-900 text-white shadow-none' : 'bg-emerald-600 text-white shadow-xl shadow-emerald-100/50'}`}>
         <div className="absolute top-0 right-0 p-4 opacity-10"><Wallet size={120} /></div>
         <p className="text-emerald-100 font-medium mb-1 text-sm">Saldo em Conta</p>
@@ -244,7 +243,7 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
   );
 };
 
-// --- MODAL DE EDIÇÃO ---
+// --- MODAL DE EDIÇÃO (COM TRAVA PAN-Y) ---
 const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticipate, onDelete, categories, cards, darkMode }: any) => {
   const [desc, setDesc] = useState(transaction.description);
   const [cat, setCat] = useState(transaction.category);
@@ -254,12 +253,6 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
   const [paymentMethod, setPaymentMethod] = useState<'Dinheiro'|'Cartão'>(transaction.paymentMethod);
   const [selectedCard, setSelectedCard] = useState(transaction.cardId || cards[0]?.id || '');
   const [installments, setInstallments] = useState(transaction.installment?.total || 1);
-
-  // TRAVA DE ROLAGEM NO BODY
-  useEffect(() => {
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = 'auto'; };
-  }, []);
 
   useEffect(() => {
      if (transaction.installment) {
@@ -271,6 +264,7 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
 
   const handleSave = () => {
     const finalAmount = Number(amount);
+    
     const isStructuralChange = 
         paymentMethod !== transaction.paymentMethod ||
         (paymentMethod === 'Cartão' && installments !== (transaction.installment?.total || 1)) ||
@@ -278,12 +272,22 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
 
     if (isStructuralChange) {
         if(confirm('Você alterou a forma de pagamento ou parcelamento. Isso irá recriar todas as transações relacionadas. Continuar?')) {
-            onRewrite(transaction, { description: desc, amount: finalAmount, category: cat, date, paymentMethod, cardId: paymentMethod === 'Cartão' ? selectedCard : null, installments });
+            onRewrite(transaction, {
+                description: desc,
+                amount: finalAmount,
+                category: cat,
+                date: date,
+                paymentMethod,
+                cardId: paymentMethod === 'Cartão' ? selectedCard : null,
+                installments
+            });
             onClose();
         }
     } else {
         let saveAmount = finalAmount;
-        if (transaction.installment) saveAmount = finalAmount / transaction.installment.total; 
+        if (transaction.installment) {
+            saveAmount = finalAmount / transaction.installment.total; 
+        }
         const cardIdToSave = paymentMethod === 'Cartão' ? selectedCard : null;
         onRewrite(transaction, { ...transaction, description: desc, amount: saveAmount, category: cat, date, cardId: cardIdToSave }, true);
         onClose();
@@ -299,8 +303,12 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" style={{touchAction: 'none'}}>
-       <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl overflow-y-auto max-h-[90dvh] ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+       {/* TRAVA PAN-Y APLICADA NO CONTAINER INTERNO */}
+       <div 
+         className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl overflow-y-auto overflow-x-hidden max-h-[90dvh] ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}
+         style={{ touchAction: 'pan-y' }}
+       >
           <div className="flex justify-between items-center mb-6">
              <h3 className="font-bold text-lg">Editar Detalhes</h3>
              <button onClick={onClose}><X size={20} className="text-gray-400"/></button>
@@ -345,7 +353,6 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
           </div>
 
           <div className="flex flex-col gap-3 mt-8">
-             {/* BOTÃO SEM SOMBRA NO DARK MODE */}
              <button onClick={handleSave} className={`w-full py-4 font-bold rounded-xl ${darkMode ? 'bg-emerald-600 text-white shadow-none' : 'bg-emerald-600 text-white shadow-lg shadow-emerald-100/50'}`}>Salvar Alterações</button>
              
              {transaction.installment && transaction.installment.current < transaction.installment.total && (
@@ -689,7 +696,7 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
   );
 };
 
-// --- TELA: NOVA TRANSAÇÃO (TRAVADA NO BODY) ---
+// --- TELA: NOVA TRANSAÇÃO (TRAVADA COM PAN-Y) ---
 const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDetails, darkMode }: any) => {
   const [desc, setDesc] = useState('');
   const [amount, setAmount] = useState('');
@@ -703,12 +710,6 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
 
   const [showAlert, setShowAlert] = useState(false);
   const [alertMessages, setAlertMessages] = useState<string[]>([]);
-
-  // TRAVA DE ROLAGEM NO BODY
-  useEffect(() => {
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = 'auto'; };
-  }, []);
 
   // Limpeza de string numérica robusta
   const parseAmount = (val: string) => {
@@ -833,7 +834,11 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
         <h2 className="font-bold text-lg">Nova Transação</h2>
         <div className="w-9" />
       </div>
-      <form onSubmit={(e) => { e.preventDefault(); checkBudgets(); }} className="p-6 space-y-6 flex-1 overflow-y-auto pb-24 overscroll-contain">
+      <form 
+        onSubmit={(e) => { e.preventDefault(); checkBudgets(); }} 
+        className="p-6 space-y-6 flex-1 overflow-y-auto pb-24 overscroll-contain"
+        style={{ touchAction: 'pan-y' }}
+      >
         <div>
            <label className="text-xs font-bold text-gray-400 uppercase">Valor Total</label>
            <input type="tel" value={amount} onChange={e => setAmount(e.target.value)}
@@ -882,8 +887,8 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
             ))}
           </div>
         </div>
-        {/* BOTÃO SEM SOMBRA NO DARK MODE */}
-        <button type="submit" disabled={isSaving} className={`w-full py-4 font-bold rounded-2xl shadow-lg transition-all ${isSaving ? 'bg-gray-400 cursor-not-allowed' : (darkMode ? 'bg-emerald-600 text-white shadow-none' : 'bg-emerald-600 text-white shadow-emerald-100/50')}`}>
+        {/* BOTÃO SEM SOMBRA NO DARK MODE, SOMBRA SUTIL NO LIGHT */}
+        <button type="submit" disabled={isSaving} className={`w-full py-4 font-bold rounded-2xl transition-all ${isSaving ? 'bg-gray-400 cursor-not-allowed' : (darkMode ? 'bg-emerald-600 text-white shadow-none' : 'bg-emerald-600 text-white shadow-lg shadow-emerald-100/50')}`}>
             {isSaving ? 'Salvando...' : 'Confirmar'}
         </button>
       </form>
@@ -1166,6 +1171,7 @@ export default function App() {
         <div className={`fixed bottom-0 w-full border-t p-2 pb-6 flex justify-between items-center px-8 z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-100'}`}>
           <button onClick={() => setScreen(AppScreen.Home)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Home ? 'text-emerald-500' : 'text-gray-400'}`}><LayoutDashboard size={24} strokeWidth={screen===AppScreen.Home?2.5:2} /><span className="text-[10px] font-bold">Início</span></button>
           <button onClick={() => setScreen(AppScreen.Cards)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Cards ? 'text-emerald-500' : 'text-gray-400'}`}><CreditCard size={24} strokeWidth={screen===AppScreen.Cards?2.5:2} /><span className="text-[10px] font-bold">Cartões</span></button>
+          {/* Botão flutuante SEM SOMBRA no dark mode, Sombra suave no Light */}
           <div className="relative -top-8"><button onClick={() => setScreen(AppScreen.Add)} className={`w-14 h-14 rounded-full shadow-xl flex items-center justify-center hover:scale-105 transition-transform ${isDark ? 'bg-emerald-600 text-white shadow-none' : 'bg-emerald-600 text-white shadow-emerald-100/50'}`}><Plus size={32}/></button></div>
           <button onClick={() => setScreen(AppScreen.Reports)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Reports ? 'text-emerald-500' : 'text-gray-400'}`}><PieChartIcon size={24} strokeWidth={screen===AppScreen.Reports?2.5:2} /><span className="text-[10px] font-bold">Relatórios</span></button>
           <button onClick={() => setScreen(AppScreen.Profile)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Profile ? 'text-emerald-500' : 'text-gray-400'}`}><UserIcon size={24} strokeWidth={screen===AppScreen.Profile?2.5:2} /><span className="text-[10px] font-bold">Perfil</span></button>
