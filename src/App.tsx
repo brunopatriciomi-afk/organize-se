@@ -58,7 +58,7 @@ export interface Transaction {
 // Categorias Padrão
 const DEFAULT_EXPENSE_CATS = ['Alimentação', 'Moradia', 'Transporte', 'Lazer', 'Saúde', 'Educação', 'Compras', 'Serviços', 'Assinaturas'];
 const DEFAULT_INCOME_CATS = ['Salário', 'Bônus', 'Dinheiro Extra', 'Reembolso'];
-const DEFAULT_INVEST_CATS = ['Reserva', 'Casa', 'Carro', 'Aposentadoria', 'Saldo Inicial'];
+const DEFAULT_INVEST_CATS = ['Reserva', 'Casa', 'Carro', 'Aposentadoria'];
 
 const INITIAL_CARDS: CardData[] = [
   { id: 'card_nubank', name: 'Nubank', holder: 'Bruno', limit: 5000, closingDay: 1, dueDay: 8, color: 'border-l-purple-600' },
@@ -67,6 +67,20 @@ const INITIAL_CARDS: CardData[] = [
 
 const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const MONTHS_FULL = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+// PALETA DE CORES DIVERSIFICADA PARA O GRÁFICO
+const CHART_COLORS = [
+  '#10B981', // Emerald (Verde)
+  '#3B82F6', // Blue (Azul)
+  '#F59E0B', // Amber (Laranja)
+  '#EF4444', // Rose (Vermelho)
+  '#8B5CF6', // Violet (Roxo)
+  '#EC4899', // Pink (Rosa)
+  '#06B6D4', // Cyan (Ciano)
+  '#6366F1', // Indigo
+  '#84CC16', // Lime
+  '#F43F5E'  // Rose Red
+];
 
 // --- 2. UTILITÁRIOS ---
 const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -77,10 +91,6 @@ const formatDate = (dateString: string) => {
 };
 const generateId = () => Math.random().toString(36).substr(2, 9);
 const getMonthKey = (date: Date) => date.toISOString().slice(0, 7);
-const getRandomColor = () => {
-    const colors = ['#F59E0B', '#3B82F6', '#EC4899', '#8B5CF6', '#10B981', '#6366F1', '#EF4444'];
-    return colors[Math.floor(Math.random() * colors.length)];
-};
 
 // --- 3. COMPONENTES ---
 
@@ -165,11 +175,18 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, onTransferBalan
   );
 };
 
-// --- TELA: RELATÓRIOS (ATUALIZADA) ---
-const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: any) => {
-  // Estados dos filtros
+// --- TELA: RELATÓRIOS (CORRIGIDA) ---
+const Reports = ({ transactions, categories, settings, darkMode, onSelectTransaction }: any) => {
   const [filterType, setFilterType] = useState<'Tudo' | 'Saída' | 'Entrada' | 'Investimento'>('Tudo');
   const [filterCat, setFilterCat] = useState('Todas');
+
+  // Lógica para carregar as categorias corretas no filtro
+  const availableCategories = useMemo(() => {
+     if (filterType === 'Entrada') return settings.incomeCategories || DEFAULT_INCOME_CATS;
+     if (filterType === 'Investimento') return settings.investmentCategories || DEFAULT_INVEST_CATS;
+     if (filterType === 'Saída') return settings.expenseCategories || categories; // despesas
+     return [];
+  }, [filterType, settings, categories]);
 
   // Lógica do Gráfico e Totais
   const reportData = useMemo(() => {
@@ -177,7 +194,6 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
     let centerValue = 0;
     let centerLabel = "";
 
-    // Dados base filtrados (já vem filtrado por mês do componente App)
     const filteredTrans = transactions;
 
     if (filterType === 'Tudo') {
@@ -186,16 +202,14 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
         const totalDespesa = filteredTrans.filter((t:any) => t.type === 'Saída').reduce((acc:number, curr:any) => acc + curr.amount, 0);
         const totalInvestimento = filteredTrans.filter((t:any) => t.type === 'Investimento').reduce((acc:number, curr:any) => acc + curr.amount, 0);
 
-        // Opção B: Saldo Líquido no Centro
         centerValue = totalReceita - totalDespesa - totalInvestimento;
         centerLabel = "Saldo Líquido";
 
-        // Gráfico com 3 fatias fixas
         chartData = [
-            { name: 'Receitas', value: totalReceita, color: '#10B981' },      // Verde
-            { name: 'Despesas', value: totalDespesa, color: '#EF4444' },      // Vermelho
-            { name: 'Investimentos', value: totalInvestimento, color: '#6366F1' } // Roxo/Azul
-        ].filter(d => d.value > 0); // Só mostra o que tem valor
+            { name: 'Receitas', value: totalReceita, color: '#10B981' }, 
+            { name: 'Despesas', value: totalDespesa, color: '#EF4444' }, 
+            { name: 'Investimentos', value: totalInvestimento, color: '#6366F1' } 
+        ].filter(d => d.value > 0);
 
     } else {
         // --- VISÃO ESPECÍFICA (Por Categoria) ---
@@ -212,28 +226,30 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
         centerLabel = filterType === 'Investimento' ? 'Total Aportado' : (filterType === 'Entrada' ? 'Total Recebido' : 'Total Gasto');
 
         chartData = Array.from(map, ([name, value]) => ({ 
-            name, value, color: getRandomColor() 
+            name, value 
         })).sort((a,b) => b.value - a.value);
+
+        // Atribuir cores fixas da paleta
+        chartData = chartData.map((item, index) => ({
+            ...item,
+            color: CHART_COLORS[index % CHART_COLORS.length]
+        }));
     }
 
     return { chartData, centerValue, centerLabel };
   }, [transactions, filterType, filterCat]);
 
-  // Lista Detalhada abaixo do gráfico
   const detailedList = useMemo(() => {
     let list = transactions;
-    
     if (filterType !== 'Tudo') {
         list = list.filter((t:any) => t.type === filterType);
         if (filterCat !== 'Todas') {
             list = list.filter((t:any) => t.category === filterCat);
         }
     }
-    // Se for 'Tudo', mostra tudo misturado (ordenado por data já vem do App)
     return list;
   }, [transactions, filterType, filterCat]);
 
-  // Handler para mudar o tipo e resetar categoria
   const handleTypeChange = (type: any) => {
       setFilterType(type);
       setFilterCat('Todas');
@@ -243,7 +259,6 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
     <div className="p-4 pb-32">
       <h2 className={`text-xl font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Relatórios</h2>
       
-      {/* FILTROS */}
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}><Filter size={14} className="text-gray-400"/></div>
          
@@ -254,7 +269,7 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
             <option value="Entrada">Receitas</option>
          </select>
 
-         {/* Dropdown de Categorias (Bloqueado se for TUDO) */}
+         {/* Dropdown de Categorias (Dinâmico) */}
          <div className="relative">
             <select 
                 value={filterCat} 
@@ -267,7 +282,7 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
                 }`}
             >
                 <option value="Todas">Todas as Categorias</option>
-                {filterType !== 'Tudo' && categories.map((c:string) => <option key={c} value={c}>{c}</option>)}
+                {availableCategories.map((c:string) => <option key={c} value={c}>{c}</option>)}
             </select>
             <ChevronDown size={14} className={`absolute right-3 top-3 pointer-events-none ${filterType === 'Tudo' ? 'text-gray-500' : 'text-gray-400'}`} />
          </div>
@@ -275,26 +290,29 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
 
       {reportData.chartData.length > 0 ? (
         <>
-          {/* GRÁFICO */}
           <div className={`p-6 rounded-[32px] shadow-sm border h-80 mb-6 relative ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie data={reportData.chartData} cx="50%" cy="50%" innerRadius={70} outerRadius={90} paddingAngle={5} dataKey="value">
                   {reportData.chartData.map((entry:any, index:number) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                 </Pie>
+                {/* TOOLTIP MOSTRANDO PORCENTAGEM */}
                 <RechartsTooltip 
-                    formatter={(value: number) => formatCurrency(value)}
+                    formatter={(value: number, name: string) => {
+                        // Calcula o total do gráfico atual para saber a porcentagem
+                        const total = reportData.chartData.reduce((a:any, b:any) => a + b.value, 0);
+                        const percent = ((value / total) * 100).toFixed(1);
+                        return [`${percent}%`, name]; // Retorna Ex: "25.0%"
+                    }}
                     contentStyle={{ backgroundColor: darkMode ? '#1f2937' : '#fff', borderColor: darkMode ? '#374151' : '#e5e7eb', borderRadius: '12px', padding: '10px' }}
                     itemStyle={{ color: darkMode ? '#F3F4F6' : '#111827', fontWeight: 'bold', fontSize: '12px' }}
                 />
               </PieChart>
             </ResponsiveContainer>
             
-            {/* TEXTO CENTRAL (OPÇÃO B) */}
             <div className="text-center absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none">
               <p className="text-[10px] uppercase font-bold text-gray-400">{reportData.centerLabel}</p>
               <p className={`text-xl font-bold ${
-                  // Se for TUDO e negativo = Vermelho, positivo = Verde. Se não, segue cor do tema
                   filterType === 'Tudo' 
                     ? (reportData.centerValue >= 0 ? 'text-emerald-500' : 'text-rose-500') 
                     : (darkMode ? 'text-white' : 'text-gray-800')
@@ -304,7 +322,6 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
             </div>
           </div>
 
-          {/* LISTA DETALHADA COM CORES */}
           <div className="flex items-center gap-2 mb-3">
              <List size={18} className="text-gray-400"/>
              <h3 className={`font-bold text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Extrato Detalhado</h3>
@@ -315,20 +332,14 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
               const isIncome = t.type === 'Entrada';
               const isInvest = t.type === 'Investimento';
               
-              // Cores dos Ícones
               const iconColor = isIncome 
                 ? (darkMode ? 'text-emerald-400 bg-emerald-900/50' : 'text-emerald-600 bg-emerald-100') 
                 : (isInvest 
                     ? (darkMode ? 'text-indigo-400 bg-indigo-900/50' : 'text-indigo-600 bg-indigo-100') 
                     : (darkMode ? 'text-rose-400 bg-rose-900/50' : 'text-rose-600 bg-rose-50')
                   );
-              
               const icon = isIncome ? <ArrowUpCircle size={16}/> : (isInvest ? <TrendingUp size={16}/> : <ArrowDownCircle size={16}/>);
-
-              // Cores dos Valores
-              const amountColor = isIncome 
-                ? 'text-emerald-500' 
-                : (isInvest ? 'text-indigo-500' : 'text-rose-500');
+              const amountColor = isIncome ? 'text-emerald-500' : (isInvest ? 'text-indigo-500' : 'text-rose-500');
 
               return (
                 <div onClick={() => onSelectTransaction(t, 'reports')} key={t.id} className={`flex justify-between items-center p-4 rounded-xl border cursor-pointer active:opacity-70 ${darkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-750' : 'bg-white border-gray-50 hover:bg-gray-50'}`}>
@@ -343,7 +354,6 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
                     </div>
                     <div className="text-right">
                         <span className={`font-bold text-sm ${amountColor}`}>{isIncome ? '+' : '-'}{formatCurrency(t.amount)}</span>
-                        {t.installment && <p className="text-[10px] text-blue-500 font-bold">Parcela {t.installment.current}/{t.installment.total}</p>}
                     </div>
                 </div>
               );
@@ -359,7 +369,7 @@ const Reports = ({ transactions, categories, darkMode, onSelectTransaction }: an
   );
 };
 
-// --- MODAL DE EDIÇÃO ---
+// --- MODAL DE EDIÇÃO (MANTIDO IGUAL) ---
 const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticipate, onDelete, settings, cards, darkMode }: any) => {
   const [desc, setDesc] = useState(transaction.description);
   const [cat, setCat] = useState(transaction.category);
@@ -681,12 +691,17 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
   );
 };
 
-// --- PERFIL (ATUALIZADO) ---
+// --- PERFIL (CORRIGIDO) ---
 const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, onDeleteCategory, onLogout, monthlySavings, transactions, darkMode, onAddInitialBalance }: any) => {
   const [showCats, setShowCats] = useState(false);
   const [showGoals, setShowGoals] = useState(false);
   const [showInvestments, setShowInvestments] = useState(false);
   
+  // Estado para adicionar saldo inicial com categoria
+  const [isAddingBalance, setIsAddingBalance] = useState(false);
+  const [balanceAmount, setBalanceAmount] = useState('');
+  const [balanceCategory, setBalanceCategory] = useState('');
+
   const [newCat, setNewCat] = useState('');
   const [newInvestCat, setNewInvestCat] = useState('');
 
@@ -695,6 +710,8 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
 
   const [newGoalName, setNewGoalName] = useState('');
   const [newGoalAmount, setNewGoalAmount] = useState('');
+
+  const investmentCats = settings.investmentCategories || DEFAULT_INVEST_CATS;
 
   const handleSaveIncome = () => {
     onUpdateSettings({...settings, monthlyIncome: parseFloat(tempIncome)});
@@ -725,11 +742,16 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
       onUpdateSettings({ ...settings, investmentCategories: currentList.filter((x:string) => x !== c) });
   };
   
-  const handleAddManualBalance = () => {
-      const amount = prompt("Digite o valor do saldo inicial (ex: 40000):");
-      if(amount && !isNaN(parseFloat(amount))) {
-          onAddInitialBalance(parseFloat(amount));
-      }
+  // CONFIRMAR SALDO INICIAL COM CATEGORIA
+  const confirmInitialBalance = () => {
+      if (!balanceAmount || !balanceCategory) return alert("Preencha valor e categoria.");
+      const amount = parseFloat(balanceAmount);
+      if (isNaN(amount) || amount <= 0) return alert("Valor inválido");
+      
+      onAddInitialBalance(amount, balanceCategory);
+      setBalanceAmount('');
+      setBalanceCategory('');
+      setIsAddingBalance(false);
   };
 
   const updateCategoryLimit = (cat: string, limit: string) => {
@@ -749,8 +771,6 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
       investTransactions.forEach((t:any) => map.set(t.category, (map.get(t.category) || 0) + t.amount));
       return Array.from(map, ([name, value]) => ({ name, value }));
   }, [transactions]);
-
-  const investmentCats = settings.investmentCategories || DEFAULT_INVEST_CATS;
 
   return (
     <div className="p-4 pb-32 space-y-6">
@@ -831,7 +851,7 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
             )}
          </div>
 
-         {/* Meus Investimentos (COM BOTÃO DE SALDO INICIAL) */}
+         {/* Meus Investimentos (ATUALIZADO) */}
          <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
             <div onClick={() => setShowInvestments(!showInvestments)} className="p-4 flex items-center justify-between cursor-pointer">
                 <div className="flex items-center gap-4">
@@ -847,9 +867,36 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
                 <div className={`px-4 pb-4 border-t animate-in slide-in-from-top-2 ${darkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50/50 border-gray-100'}`}>
                     
                     {/* Botão de Ajuste de Saldo */}
-                    <button onClick={handleAddManualBalance} className="w-full mb-4 py-3 bg-indigo-50 text-indigo-600 border border-indigo-100 font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-indigo-100 text-xs mt-2">
-                        + Adicionar Saldo Inicial / Ajuste
-                    </button>
+                    {!isAddingBalance ? (
+                        <button onClick={() => setIsAddingBalance(true)} className="w-full mb-4 py-3 bg-indigo-50 text-indigo-600 border border-indigo-100 font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-indigo-100 text-xs mt-2">
+                            + Adicionar Saldo Inicial
+                        </button>
+                    ) : (
+                        <div className={`p-3 rounded-xl mb-4 border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+                            <p className="text-xs font-bold mb-2 text-gray-400">Novo Saldo / Ajuste</p>
+                            <div className="space-y-2">
+                                <input 
+                                    type="number" 
+                                    placeholder="Valor (Ex: 1000)" 
+                                    value={balanceAmount} 
+                                    onChange={e=>setBalanceAmount(e.target.value)} 
+                                    className={`w-full p-2 text-sm rounded border ${darkMode ? 'bg-gray-600 border-gray-500 text-white' : 'bg-white'}`}
+                                />
+                                <select 
+                                    value={balanceCategory} 
+                                    onChange={e=>setBalanceCategory(e.target.value)} 
+                                    className={`w-full p-2 text-sm rounded border ${darkMode ? 'bg-gray-600 border-gray-500 text-white' : 'bg-white'}`}
+                                >
+                                    <option value="">Selecione a Categoria...</option>
+                                    {investmentCats.map((c: string) => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                                <div className="flex gap-2 pt-1">
+                                    <button onClick={() => setIsAddingBalance(false)} className="flex-1 py-2 text-xs text-gray-500 font-bold">Cancelar</button>
+                                    <button onClick={confirmInitialBalance} className="flex-1 py-2 text-xs bg-indigo-600 text-white rounded font-bold">Salvar</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="flex gap-2 mb-3 mt-3">
                         <input placeholder="Nova Categoria (Ex: Cripto)" value={newInvestCat} onChange={e=>setNewInvestCat(e.target.value)} className={`flex-1 p-2 text-xs border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white'}`} />
@@ -1092,13 +1139,13 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
   );
 };
 
-// --- 4. APP PRINCIPAL ---
+// --- 4. APP PRINCIPAL (CORRIGIDO) ---
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [rawTransactions, setRawTransactions] = useState<Transaction[]>([]);
   const [cards, setCards] = useState<CardData[]>(INITIAL_CARDS);
   const [categories, setCategories] = useState<string[]>(DEFAULT_EXPENSE_CATS);
-  const [settings, setSettings] = useState<UserSettings>({ monthlyIncome: 5000, financialGoal: 1000, goals: [], darkMode: false, categoryLimits: {} });
+  const [settings, setSettings] = useState<UserSettings>({ monthlyIncome: 5000, goals: [], darkMode: false, categoryLimits: {} });
   
   const [screen, setScreen] = useState<AppScreen>(AppScreen.Home);
   const [loading, setLoading] = useState(true);
@@ -1156,8 +1203,8 @@ export default function App() {
     let inc = 0, exp = 0;
     filteredTransactions.forEach(t => {
         if(t.type === 'Entrada') inc += t.amount;
-        else if (t.type === 'Investimento' && t.category === 'Saldo Inicial') {
-            // LÓGICA ESPECIAL: Se for "Saldo Inicial", não conta como despesa do mês para não negativar o saldo
+        else if (t.type === 'Investimento' && (t.description.includes('Saldo Inicial') || t.description.includes('Ajuste Manual'))) {
+            // Saldo Inicial não desconta do fluxo de caixa
         }
         else exp += t.amount;
     });
@@ -1275,18 +1322,17 @@ export default function App() {
     await batch.commit();
   };
 
-  // ADICIONAR SALDO INICIAL (INVESTIMENTO) SEM AFETAR FLUXO
-  const addInitialBalance = async (amount: number) => {
+  // ADICIONAR SALDO INICIAL (CORRIGIDO PARA RECEBER CATEGORIA)
+  const addInitialBalance = async (amount: number, category: string) => {
       if(!user) return;
       const id = generateId();
-      // Cria a transação com data de hoje e categoria específica
       const today = new Date().toISOString().split('T')[0];
       const newTrans: Transaction = {
           id,
           description: 'Saldo Inicial / Ajuste Manual',
           amount,
           type: 'Investimento',
-          category: 'Saldo Inicial', // Importante para a lógica de exclusão do fluxo
+          category: category, // Agora usa a categoria real (ex: CDB)
           date: today,
           month: today.slice(0, 7),
           paymentMethod: 'Dinheiro'
@@ -1368,7 +1414,7 @@ export default function App() {
 
       <div className="flex-1 overflow-y-auto pt-4 scrollbar-hide">
         {screen === AppScreen.Home && <Home transactions={filteredTransactions} monthDetails={monthDetails} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'home'})} onTransferBalance={transferBalance} darkMode={isDark} />}
-        {screen === AppScreen.Reports && <Reports transactions={filteredTransactions} categories={categories} darkMode={isDark} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'reports'})} />}
+        {screen === AppScreen.Reports && <Reports transactions={filteredTransactions} categories={categories} settings={settings} darkMode={isDark} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'reports'})} />}
         {screen === AppScreen.Cards && <CardsScreen cards={cards} transactions={rawTransactions} currentMonthKey={selectedMonthKey} onSaveCard={saveCard} onDeleteCard={deleteCard} darkMode={isDark} />}
         {screen === AppScreen.Profile && <Profile user={user} categories={categories} settings={settings} transactions={rawTransactions} onUpdateSettings={updateSettings} onAddCategory={(c:string)=>updateCategories([...categories,c])} onDeleteCategory={(c:string)=>updateCategories(categories.filter(x=>x!==c))} onLogout={()=>signOut(auth)} monthlySavings={monthDetails.balance} darkMode={isDark} onAddInitialBalance={addInitialBalance} />}
       </div>
