@@ -5,7 +5,7 @@ import {
 import { 
   LayoutDashboard, CreditCard, PieChart as PieChartIcon, User as UserIcon, 
   Plus, ChevronLeft, ChevronRight, Wallet, ArrowUpCircle, ArrowDownCircle, 
-  Trash2, Edit2, X, Loader2, LogIn, LogOut, Filter, Settings, Target, DollarSign, AlertCircle, Check, AlertTriangle, Moon, Sun, List, CalendarOff, ArchiveX, Zap
+  Trash2, Edit2, X, Loader2, LogIn, LogOut, Filter, Settings, Target, DollarSign, AlertCircle, Check, AlertTriangle, Moon, Sun, List, CalendarOff, ArchiveX, Zap, Save
 } from 'lucide-react';
 import { 
   collection, doc, setDoc, deleteDoc, onSnapshot, query, writeBatch 
@@ -18,9 +18,15 @@ import { db, auth } from './firebaseConfig';
 // --- 1. TIPOS ---
 export enum AppScreen { Home, Reports, Cards, Profile, Add }
 
+export interface Goal {
+  id: string;
+  name: string;
+  amount: number;
+}
+
 export interface UserSettings {
   monthlyIncome: number;
-  financialGoal: number;
+  goals: Goal[]; // Agora aceita múltiplas metas
   darkMode: boolean;
   categoryLimits: Record<string, number>;
 }
@@ -256,7 +262,6 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
         (paymentMethod === 'Cartão' && selectedCard !== transaction.cardId);
 
     if (isStructuralChange) {
-        // Precisa reescrever (apagar tudo e criar novo)
         if(confirm('Você alterou a forma de pagamento ou parcelamento. Isso irá recriar todas as transações relacionadas. Continuar?')) {
             onRewrite(transaction, {
                 description: desc,
@@ -270,12 +275,11 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
             onClose();
         }
     } else {
-        // Edição simples
         let saveAmount = finalAmount;
         if (transaction.installment) {
-            saveAmount = finalAmount / transaction.installment.total; // Volta para valor da parcela
+            saveAmount = finalAmount / transaction.installment.total; 
         }
-        onRewrite(transaction, { ...transaction, description: desc, amount: saveAmount, category: cat, date, cardId: selectedCard }, true); // true = simple update
+        onRewrite(transaction, { ...transaction, description: desc, amount: saveAmount, category: cat, date, cardId: selectedCard }, true);
         onClose();
     }
   };
@@ -295,7 +299,7 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" style={{touchAction: 'none'}}>
        <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl overflow-y-auto max-h-[90vh] ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
           <div className="flex justify-between items-center mb-6">
              <h3 className="font-bold text-lg">Editar Detalhes</h3>
@@ -308,7 +312,6 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
                <input type="number" value={amount} onChange={e=>setAmount(e.target.value)} className={`w-full p-3 rounded-xl border font-bold text-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`} />
              </div>
              
-             {/* Seletor de Método de Pagamento */}
              <div>
                  <label className="text-[10px] font-bold text-gray-400 uppercase">Pagamento</label>
                  <div className="flex gap-2 mt-1">
@@ -347,7 +350,6 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
           <div className="flex flex-col gap-3 mt-8">
              <button onClick={handleSave} className="w-full py-4 bg-emerald-600 text-white font-bold rounded-xl shadow-lg shadow-emerald-200">Salvar Alterações</button>
              
-             {/* BOTÃO DE ANTECIPAR (Só aparece se for parcelado e Cartão) */}
              {transaction.installment && transaction.installment.current < transaction.installment.total && (
                  <button onClick={handleAnticipateClick} className="w-full py-3 bg-indigo-50 text-indigo-600 border border-indigo-100 font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-indigo-100">
                     <Zap size={18}/> Antecipar Parcelas Restantes
@@ -363,7 +365,372 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
   );
 };
 
-// --- (CardsScreen e Profile permanecem iguais) ---
+// --- TELA: PERFIL (COM MÚLTIPLAS METAS) ---
+const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, onDeleteCategory, onLogout, monthlySavings, darkMode }: any) => {
+  const [showCats, setShowCats] = useState(false);
+  const [newCat, setNewCat] = useState('');
+  const [isEditingIncome, setIsEditingIncome] = useState(false);
+  const [tempIncome, setTempIncome] = useState(settings.monthlyIncome.toString());
+
+  // Estado para Metas
+  const [newGoalName, setNewGoalName] = useState('');
+  const [newGoalAmount, setNewGoalAmount] = useState('');
+
+  const handleSaveIncome = () => {
+    onUpdateSettings({...settings, monthlyIncome: parseFloat(tempIncome)});
+    setIsEditingIncome(false);
+  };
+
+  const handleAddGoal = () => {
+    if(!newGoalName || !newGoalAmount) return;
+    const newGoal: Goal = { id: generateId(), name: newGoalName, amount: parseFloat(newGoalAmount) };
+    const updatedGoals = settings.goals ? [...settings.goals, newGoal] : [newGoal];
+    onUpdateSettings({ ...settings, goals: updatedGoals });
+    setNewGoalName(''); setNewGoalAmount('');
+  };
+
+  const handleDeleteGoal = (id: string) => {
+    const updatedGoals = settings.goals.filter((g:Goal) => g.id !== id);
+    onUpdateSettings({ ...settings, goals: updatedGoals });
+  };
+
+  const updateCategoryLimit = (cat: string, limit: string) => {
+    const newLimits = { ...settings.categoryLimits, [cat]: parseFloat(limit) };
+    onUpdateSettings({ ...settings, categoryLimits: newLimits });
+  };
+
+  const toggleDarkMode = () => {
+    onUpdateSettings({ ...settings, darkMode: !settings.darkMode });
+  };
+
+  const totalGoals = settings.goals ? settings.goals.reduce((acc:number, g:Goal) => acc + g.amount, 0) : 0;
+
+  return (
+    <div className="p-4 pb-32 space-y-6">
+      <div className="flex justify-between items-center">
+         <h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>Perfil</h2>
+         <div onClick={toggleDarkMode} className={`p-2 rounded-full cursor-pointer transition-colors ${darkMode ? 'bg-gray-800 text-yellow-400' : 'bg-gray-100 text-gray-500'}`}>
+            {darkMode ? <Sun size={20}/> : <Moon size={20}/>}
+         </div>
+      </div>
+
+      <div className={`rounded-3xl p-6 text-white shadow-lg relative overflow-hidden ${darkMode ? 'bg-emerald-900' : 'bg-emerald-500'}`}>
+         <div className="absolute -right-4 -top-4 opacity-10"><DollarSign size={100}/></div>
+         <div className="flex items-center gap-2 mb-2 opacity-90">
+            <DollarSign size={16}/> <span className="text-xs font-bold uppercase tracking-wider">Economia Mensal</span>
+         </div>
+         <h1 className="text-3xl font-bold mb-4">{formatCurrency(monthlySavings)}</h1>
+         <div className="h-1 bg-black/20 rounded-full w-full mb-1">
+             <div className="bg-white h-full rounded-full" style={{width: `${Math.min((monthlySavings/settings.monthlyIncome)*100, 100)}%`}}></div>
+         </div>
+         <p className="text-[10px] text-emerald-100 text-right">de {formatCurrency(settings.monthlyIncome)} (Renda)</p>
+      </div>
+
+      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest px-2 mt-4">Configurações</p>
+
+      <div className="space-y-3">
+         {/* Renda Mensal */}
+         <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+            {isEditingIncome ? (
+              <div className="flex gap-2 items-center">
+                <input autoFocus type="number" value={tempIncome} onChange={e=>setTempIncome(e.target.value)} className={`w-full p-2 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`} />
+                <button onClick={handleSaveIncome} className="bg-emerald-600 text-white p-2 rounded-lg"><Check size={18}/></button>
+              </div>
+            ) : (
+              <div onClick={() => setIsEditingIncome(true)} className="flex items-center justify-between cursor-pointer">
+                 <div className="flex items-center gap-4">
+                    <div className={`p-3 rounded-full ${darkMode ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-50 text-blue-600'}`}><Wallet size={20}/></div>
+                    <div>
+                       <p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Renda Mensal</p>
+                       <p className="text-xs text-gray-400">{formatCurrency(settings.monthlyIncome)}</p>
+                    </div>
+                 </div>
+                 <Edit2 size={16} className="text-gray-300"/>
+              </div>
+            )}
+         </div>
+
+         {/* Múltiplas Metas */}
+         <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+            <div className="flex items-center gap-4 mb-4">
+               <div className={`p-3 rounded-full ${darkMode ? 'bg-amber-900/50 text-amber-400' : 'bg-amber-50 text-amber-600'}`}><Target size={20}/></div>
+               <div>
+                   <p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Minhas Metas</p>
+                   <p className="text-xs text-gray-400">Total: {formatCurrency(totalGoals)}</p>
+               </div>
+            </div>
+            
+            <div className="space-y-2 mb-4">
+               {settings.goals && settings.goals.map((g:Goal) => (
+                  <div key={g.id} className={`flex justify-between items-center p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}>
+                     <span className={`text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-700'}`}>{g.name}</span>
+                     <div className="flex items-center gap-3">
+                        <span className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{formatCurrency(g.amount)}</span>
+                        <button onClick={() => handleDeleteGoal(g.id)} className="text-gray-400 hover:text-rose-500"><Trash2 size={14}/></button>
+                     </div>
+                  </div>
+               ))}
+               {(!settings.goals || settings.goals.length === 0) && <p className="text-xs text-gray-400 text-center py-2">Nenhuma meta cadastrada.</p>}
+            </div>
+
+            <div className="flex gap-2 border-t pt-3 dark:border-gray-700">
+               <input placeholder="Nome (Ex: Viagem)" value={newGoalName} onChange={e=>setNewGoalName(e.target.value)} className={`flex-1 p-2 text-xs border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white'}`} />
+               <input type="number" placeholder="Valor" value={newGoalAmount} onChange={e=>setNewGoalAmount(e.target.value)} className={`w-20 p-2 text-xs border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white'}`} />
+               <button onClick={handleAddGoal} className="bg-emerald-600 text-white p-2 rounded-lg"><Plus size={16}/></button>
+            </div>
+         </div>
+
+         {/* Categorias e Limites */}
+         <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+             <div onClick={() => setShowCats(!showCats)} className="p-4 flex items-center justify-between cursor-pointer">
+                <div className="flex items-center gap-4">
+                   <div className={`p-3 rounded-full ${darkMode ? 'bg-rose-900/50 text-rose-400' : 'bg-rose-50 text-rose-600'}`}><AlertCircle size={20}/></div>
+                   <div>
+                      <p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Categorias e Limites</p>
+                      <p className="text-xs text-gray-400">{categories.length} ativas</p>
+                   </div>
+                </div>
+                <ChevronRight size={16} className={`text-gray-300 transition-transform ${showCats ? 'rotate-90' : ''}`}/>
+             </div>
+             
+             {showCats && (
+               <div className={`px-4 pb-4 border-t animate-in slide-in-from-top-2 ${darkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50/50 border-gray-100'}`}>
+                 <div className="flex gap-2 mb-3 mt-3">
+                   <input value={newCat} onChange={e=>setNewCat(e.target.value)} placeholder="Nova categoria..." className={`flex-1 p-2 rounded-lg border text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white'}`}/>
+                   <button onClick={() => { if(newCat) { onAddCategory(newCat); setNewCat(''); }}} className="bg-emerald-600 text-white p-2 rounded-lg"><Plus size={18}/></button>
+                 </div>
+                 <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                   {categories.map((c:string) => (
+                     <div key={c} className={`flex justify-between items-center text-sm p-3 rounded-lg border shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+                       <span className={`font-bold ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>{c}</span>
+                       <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-gray-400 uppercase font-bold">Limite:</span>
+                          <input 
+                            type="number" 
+                            placeholder="R$ 0"
+                            className={`w-20 p-1 border rounded text-right text-xs ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`}
+                            value={settings.categoryLimits?.[c] || ''}
+                            onChange={(e) => updateCategoryLimit(c, e.target.value)}
+                          />
+                          <button onClick={() => onDeleteCategory(c)} className="text-gray-300 hover:text-rose-500 ml-1"><Trash2 size={14}/></button>
+                       </div>
+                     </div>
+                   ))}
+                 </div>
+               </div>
+             )}
+         </div>
+      </div>
+
+      <button onClick={onLogout} className={`w-full py-4 font-bold rounded-2xl flex items-center justify-center gap-2 transition-colors mt-6 ${darkMode ? 'text-rose-400 bg-rose-900/20 hover:bg-rose-900/30' : 'text-rose-500 bg-rose-50 hover:bg-rose-100'}`}>
+         <LogOut size={18} /> Sair da Conta
+      </button>
+    </div>
+  );
+};
+
+// --- TELA: NOVA TRANSAÇÃO (CORRIGIDA: ERRO AO SALVAR + TELA SOLTA) ---
+const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDetails, darkMode }: any) => {
+  const [desc, setDesc] = useState('');
+  const [amount, setAmount] = useState('');
+  const [cat, setCat] = useState(categories[0] || 'Geral');
+  const [type, setType] = useState<'Entrada' | 'Saída'>('Saída');
+  const [method, setMethod] = useState<'Dinheiro' | 'Cartão'>('Dinheiro');
+  const [selectedCard, setSelectedCard] = useState(cards[0]?.id || '');
+  const [installments, setInstallments] = useState(1);
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const [showAlert, setShowAlert] = useState(false);
+  const [alertMessages, setAlertMessages] = useState<string[]>([]);
+
+  // Limpeza de string numérica robusta
+  const parseAmount = (val: string) => {
+    if (!val) return 0;
+    // Aceita 1000,50 ou 1000.50 -> Converte para 1000.50
+    const cleanVal = val.replace(',', '.').replace(/[^0-9.]/g, ''); 
+    const result = parseFloat(cleanVal);
+    return isNaN(result) ? 0 : result;
+  };
+
+  const checkBudgets = () => {
+    const val = parseAmount(amount);
+    
+    if (val <= 0) {
+        alert("Por favor, insira um valor válido maior que zero.");
+        return;
+    }
+    if (!desc.trim()) {
+        alert("Por favor, dê um nome para a transação.");
+        return;
+    }
+
+    const messages = [];
+
+    if (type === 'Saída') {
+        // Alerta de Limite de Categoria
+        const catLimit = settings?.categoryLimits?.[cat] || 0;
+        if (catLimit > 0 && val > catLimit) {
+             messages.push(`Esta compra excede o limite de ${cat} (R$ ${formatCurrency(catLimit)}).`);
+        }
+
+        // Alerta de Metas Financeiras (SOMA DE TODAS AS METAS)
+        const totalGoals = settings.goals ? settings.goals.reduce((acc:number, g:Goal) => acc + g.amount, 0) : 0;
+        const currentExpenses = monthDetails?.expenses || 0;
+        const income = settings?.monthlyIncome || 0;
+        
+        // Quanto sobra se eu fizer essa compra?
+        const remainingAfterPurchase = income - (currentExpenses + val);
+        
+        if (totalGoals > 0 && remainingAfterPurchase < totalGoals) {
+            const missing = totalGoals - remainingAfterPurchase;
+            messages.push(`Atenção: Essa compra compromete suas metas. Faltarão ${formatCurrency(missing)} para atingir todas as metas.`);
+        }
+    }
+
+    if (messages.length > 0) {
+        setAlertMessages(messages);
+        setShowAlert(true);
+    } else {
+        confirmSave();
+    }
+  };
+
+  const confirmSave = async () => {
+    setIsSaving(true);
+    try {
+        const val = parseAmount(amount);
+        
+        if (type === 'Saída' && method === 'Cartão' && installments > 1) {
+           const parentId = generateId();
+           const batch = [];
+           const baseDate = new Date(date);
+           
+           for(let i = 0; i < installments; i++) {
+              const currentInstDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, baseDate.getDate() + 1);
+              batch.push({
+                id: generateId(),
+                description: `${desc} (${i+1}/${installments})`,
+                amount: val / installments,
+                type, 
+                category: cat, 
+                date: currentInstDate.toISOString().split('T')[0],
+                month: currentInstDate.toISOString().slice(0, 7),
+                paymentMethod: method, 
+                cardId: selectedCard,
+                installment: { current: i+1, total: installments }, 
+                parentId
+              });
+           }
+           await onSave(batch);
+        } else {
+           await onSave([{
+             id: generateId(), 
+             description: desc, 
+             amount: val, 
+             type, 
+             category: cat,
+             date: date, 
+             month: date.slice(0, 7), 
+             paymentMethod: method,
+             cardId: method === 'Cartão' ? selectedCard : undefined
+           }]);
+        }
+    } catch (error) {
+        console.error("Erro ao salvar:", error);
+        alert("Erro ao salvar. Tente novamente.");
+        setIsSaving(false);
+    }
+  };
+
+  return (
+    // "fixed inset-0 w-full h-full overflow-hidden" TRAVA A TELA E EVITA ARRASTAR
+    <div className={`fixed inset-0 w-full h-full z-50 flex flex-col animate-in slide-in-from-bottom duration-300 overflow-hidden ${darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`} style={{touchAction: 'none'}}>
+      
+      {showAlert && (
+          <div className="absolute inset-0 z-[60] bg-black/50 flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in">
+              <div className={`rounded-3xl p-6 w-full max-w-sm shadow-2xl ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+                  <div className="flex justify-center mb-4">
+                      <div className="bg-amber-100 p-4 rounded-full text-amber-600"><AlertTriangle size={32}/></div>
+                  </div>
+                  <h3 className={`text-xl font-bold text-center mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Atenção ao Orçamento</h3>
+                  <div className="space-y-2 mb-6">
+                      {alertMessages.map((msg, idx) => (
+                          <p key={idx} className={`text-sm text-center p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-300' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>{msg}</p>
+                      ))}
+                  </div>
+                  <div className="flex gap-3">
+                      <button onClick={() => { setShowAlert(false); setIsSaving(false); }} className={`flex-1 py-3 font-bold rounded-xl ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-500'}`}>Revisar</button>
+                      <button onClick={() => { setShowAlert(false); confirmSave(); }} className="flex-1 py-3 bg-amber-500 text-white font-bold rounded-xl shadow-lg shadow-amber-200">Confirmar</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      <div className={`p-4 flex justify-between items-center border-b ${darkMode ? 'border-gray-800' : 'border-gray-100'}`}>
+        <button onClick={onCancel} className={`p-2 rounded-full ${darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-gray-100'}`}><X size={20}/></button>
+        <h2 className="font-bold text-lg">Nova Transação</h2>
+        <div className="w-9" />
+      </div>
+      <form onSubmit={(e) => { e.preventDefault(); checkBudgets(); }} className="p-6 space-y-6 flex-1 overflow-y-auto pb-24">
+        <div>
+           <label className="text-xs font-bold text-gray-400 uppercase">Valor Total</label>
+           {/* type="tel" abre teclado numérico mas aceita vírgula e ponto */}
+           <input type="tel" value={amount} onChange={e => setAmount(e.target.value)}
+             className={`w-full text-5xl font-bold bg-transparent placeholder-gray-500 focus:outline-none py-2 ${darkMode ? 'text-white' : 'text-gray-800'}`} placeholder="0,00" autoFocus />
+        </div>
+        <div className={`flex p-1 rounded-xl ${darkMode ? 'bg-gray-800' : 'bg-gray-100'}`}>
+          <button type="button" onClick={() => setType('Saída')} className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${type === 'Saída' ? (darkMode ? 'bg-gray-700 text-rose-400' : 'bg-white text-rose-600 shadow-sm') : 'text-gray-400'}`}>Despesa</button>
+          <button type="button" onClick={() => setType('Entrada')} className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${type === 'Entrada' ? (darkMode ? 'bg-gray-700 text-emerald-400' : 'bg-white text-emerald-600 shadow-sm') : 'text-gray-400'}`}>Receita</button>
+        </div>
+        <div className="space-y-2">
+           <label className="text-xs font-bold text-gray-400 uppercase">Descrição</label>
+           <input value={desc} onChange={e => setDesc(e.target.value)} className={`w-full p-3 border rounded-xl outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-gray-50 border-gray-100'}`} placeholder="Ex: Mercado" />
+        </div>
+        <div className="space-y-2">
+           <label className="text-xs font-bold text-gray-400 uppercase">Data</label>
+           <input type="date" value={date} onChange={e => setDate(e.target.value)} className={`w-full p-3 border rounded-xl outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-gray-50 border-gray-100'}`} />
+        </div>
+        {type === 'Saída' && (
+          <div className={`space-y-4 pt-4 border-t ${darkMode ? 'border-gray-800' : 'border-gray-100'}`}>
+             <label className="text-xs font-bold text-gray-400 uppercase">Pagamento</label>
+             <div className="flex gap-2">
+               <button type="button" onClick={() => setMethod('Dinheiro')} className={`flex-1 p-3 rounded-xl border ${method === 'Dinheiro' ? (darkMode ? 'border-emerald-600 bg-emerald-900/30 text-emerald-400' : 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold') : (darkMode ? 'border-gray-700 text-gray-500' : 'border-gray-200 text-gray-500')}`}>Dinheiro/Pix</button>
+               <button type="button" onClick={() => setMethod('Cartão')} className={`flex-1 p-3 rounded-xl border ${method === 'Cartão' ? (darkMode ? 'border-emerald-600 bg-emerald-900/30 text-emerald-400' : 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold') : (darkMode ? 'border-gray-700 text-gray-500' : 'border-gray-200 text-gray-500')}`}>Cartão</button>
+             </div>
+             {method === 'Cartão' && (
+               <div className="space-y-4 animate-in fade-in">
+                 <select value={selectedCard} onChange={e => setSelectedCard(e.target.value)} className={`w-full p-3 border rounded-xl outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-200'}`}>
+                     {cards.map((c: any) => <option key={c.id} value={c.id}>{c.name} ({c.holder})</option>)}
+                 </select>
+                 <select value={installments} onChange={e => setInstallments(Number(e.target.value))} className={`w-full p-3 border rounded-xl outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-200'}`}>
+                     <option value={1}>À vista (1x)</option>
+                     {[2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n}x</option>)}
+                 </select>
+               </div>
+             )}
+          </div>
+        )}
+        <div className="space-y-2 pt-2">
+          <label className="text-xs font-bold text-gray-400 uppercase">Categoria</label>
+          <div className="flex flex-wrap gap-2">
+            {categories.map((c: string) => (
+               <button key={c} type="button" onClick={() => setCat(c)} 
+                 className={`px-4 py-2 rounded-full text-sm font-medium border transition-all ${cat === c ? 'bg-emerald-600 text-white border-emerald-600' : (darkMode ? 'bg-gray-800 border-gray-700 text-gray-400' : 'bg-white text-gray-600 border-gray-200')}`}>
+                 {c}
+               </button>
+            ))}
+          </div>
+        </div>
+        <button type="submit" disabled={isSaving} className={`w-full py-4 font-bold rounded-2xl shadow-lg transition-all ${isSaving ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 text-white shadow-emerald-200'}`}>
+            {isSaving ? 'Salvando...' : 'Confirmar'}
+        </button>
+      </form>
+    </div>
+  );
+};
+
+// --- (CardsScreen permanece igual, código abaixo omitido para caber, mas você DEVE manter o anterior) ---
 const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDeleteCard, darkMode }: any) => {
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -520,331 +887,6 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
     </div>
   );
 };
-const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, onDeleteCategory, onLogout, monthlySavings, darkMode }: any) => {
-  const [showCats, setShowCats] = useState(false);
-  const [newCat, setNewCat] = useState('');
-  
-  const [editingField, setEditingField] = useState<'income' | 'goal' | null>(null);
-  const [tempValue, setTempValue] = useState('');
-
-  const handleEdit = (field: 'income' | 'goal') => {
-    setEditingField(field);
-    setTempValue(field === 'income' ? settings.monthlyIncome.toString() : settings.financialGoal.toString());
-  };
-
-  const saveField = () => {
-    if(editingField === 'income') onUpdateSettings({...settings, monthlyIncome: parseFloat(tempValue)});
-    if(editingField === 'goal') onUpdateSettings({...settings, financialGoal: parseFloat(tempValue)});
-    setEditingField(null);
-  };
-
-  const updateCategoryLimit = (cat: string, limit: string) => {
-    const newLimits = { ...settings.categoryLimits, [cat]: parseFloat(limit) };
-    onUpdateSettings({ ...settings, categoryLimits: newLimits });
-  };
-
-  const toggleDarkMode = () => {
-    onUpdateSettings({ ...settings, darkMode: !settings.darkMode });
-  };
-
-  return (
-    <div className="p-4 pb-32 space-y-6">
-      <div className="flex justify-between items-center">
-         <h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>Perfil</h2>
-         <div onClick={toggleDarkMode} className={`p-2 rounded-full cursor-pointer transition-colors ${darkMode ? 'bg-gray-800 text-yellow-400' : 'bg-gray-100 text-gray-500'}`}>
-            {darkMode ? <Sun size={20}/> : <Moon size={20}/>}
-         </div>
-      </div>
-
-      <div className={`rounded-3xl p-6 text-white shadow-lg relative overflow-hidden ${darkMode ? 'bg-emerald-900' : 'bg-emerald-500'}`}>
-         <div className="absolute -right-4 -top-4 opacity-10"><DollarSign size={100}/></div>
-         <div className="flex items-center gap-2 mb-2 opacity-90">
-            <DollarSign size={16}/> <span className="text-xs font-bold uppercase tracking-wider">Economia Mensal</span>
-         </div>
-         <h1 className="text-3xl font-bold mb-4">{formatCurrency(monthlySavings)}</h1>
-         <div className="h-1 bg-black/20 rounded-full w-full mb-1">
-             <div className="bg-white h-full rounded-full" style={{width: `${Math.min((monthlySavings/settings.monthlyIncome)*100, 100)}%`}}></div>
-         </div>
-         <p className="text-[10px] text-emerald-100 text-right">de {formatCurrency(settings.monthlyIncome)} (Renda)</p>
-      </div>
-
-      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest px-2 mt-4">Configurações</p>
-
-      <div className="space-y-3">
-         {/* Renda Mensal */}
-         <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-            {editingField === 'income' ? (
-              <div className="flex gap-2 items-center">
-                <input autoFocus type="number" value={tempValue} onChange={e=>setTempValue(e.target.value)} className={`w-full p-2 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`} />
-                <button onClick={saveField} className="bg-emerald-600 text-white p-2 rounded-lg"><Check size={18}/></button>
-              </div>
-            ) : (
-              <div onClick={() => handleEdit('income')} className="flex items-center justify-between cursor-pointer">
-                 <div className="flex items-center gap-4">
-                    <div className={`p-3 rounded-full ${darkMode ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-50 text-blue-600'}`}><Wallet size={20}/></div>
-                    <div>
-                       <p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Renda Mensal</p>
-                       <p className="text-xs text-gray-400">{formatCurrency(settings.monthlyIncome)}</p>
-                    </div>
-                 </div>
-                 <Edit2 size={16} className="text-gray-300"/>
-              </div>
-            )}
-         </div>
-
-         {/* Meta Financeira */}
-         <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-            {editingField === 'goal' ? (
-              <div className="flex gap-2 items-center">
-                <input autoFocus type="number" value={tempValue} onChange={e=>setTempValue(e.target.value)} className={`w-full p-2 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`} />
-                <button onClick={saveField} className="bg-emerald-600 text-white p-2 rounded-lg"><Check size={18}/></button>
-              </div>
-            ) : (
-              <div onClick={() => handleEdit('goal')} className="flex items-center justify-between cursor-pointer">
-                 <div className="flex items-center gap-4">
-                    <div className={`p-3 rounded-full ${darkMode ? 'bg-amber-900/50 text-amber-400' : 'bg-amber-50 text-amber-600'}`}><Target size={20}/></div>
-                    <div>
-                       <p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Meta Financeira</p>
-                       <p className="text-xs text-gray-400">{formatCurrency(settings.financialGoal)}</p>
-                    </div>
-                 </div>
-                 <Edit2 size={16} className="text-gray-300"/>
-              </div>
-            )}
-         </div>
-
-         {/* Categorias e Limites */}
-         <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-             <div onClick={() => setShowCats(!showCats)} className="p-4 flex items-center justify-between cursor-pointer">
-                <div className="flex items-center gap-4">
-                   <div className={`p-3 rounded-full ${darkMode ? 'bg-rose-900/50 text-rose-400' : 'bg-rose-50 text-rose-600'}`}><AlertCircle size={20}/></div>
-                   <div>
-                      <p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Categorias e Limites</p>
-                      <p className="text-xs text-gray-400">{categories.length} ativas</p>
-                   </div>
-                </div>
-                <ChevronRight size={16} className={`text-gray-300 transition-transform ${showCats ? 'rotate-90' : ''}`}/>
-             </div>
-             
-             {showCats && (
-               <div className={`px-4 pb-4 border-t animate-in slide-in-from-top-2 ${darkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50/50 border-gray-100'}`}>
-                 <div className="flex gap-2 mb-3 mt-3">
-                   <input value={newCat} onChange={e=>setNewCat(e.target.value)} placeholder="Nova categoria..." className={`flex-1 p-2 rounded-lg border text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white'}`}/>
-                   <button onClick={() => { if(newCat) { onAddCategory(newCat); setNewCat(''); }}} className="bg-emerald-600 text-white p-2 rounded-lg"><Plus size={18}/></button>
-                 </div>
-                 <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                   {categories.map((c:string) => (
-                     <div key={c} className={`flex justify-between items-center text-sm p-3 rounded-lg border shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-                       <span className={`font-bold ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>{c}</span>
-                       <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-gray-400 uppercase font-bold">Limite:</span>
-                          <input 
-                            type="number" 
-                            placeholder="R$ 0"
-                            className={`w-20 p-1 border rounded text-right text-xs ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`}
-                            value={settings.categoryLimits?.[c] || ''}
-                            onChange={(e) => updateCategoryLimit(c, e.target.value)}
-                          />
-                          <button onClick={() => onDeleteCategory(c)} className="text-gray-300 hover:text-rose-500 ml-1"><Trash2 size={14}/></button>
-                       </div>
-                     </div>
-                   ))}
-                 </div>
-               </div>
-             )}
-         </div>
-      </div>
-
-      <button onClick={onLogout} className={`w-full py-4 font-bold rounded-2xl flex items-center justify-center gap-2 transition-colors mt-6 ${darkMode ? 'text-rose-400 bg-rose-900/20 hover:bg-rose-900/30' : 'text-rose-500 bg-rose-50 hover:bg-rose-100'}`}>
-         <LogOut size={18} /> Sair da Conta
-      </button>
-    </div>
-  );
-};
-
-// --- TELA: NOVA TRANSAÇÃO (CORRIGIDA E BLINDADA) ---
-const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDetails, darkMode }: any) => {
-  const [desc, setDesc] = useState('');
-  const [amount, setAmount] = useState('');
-  const [cat, setCat] = useState(categories[0] || 'Geral');
-  const [type, setType] = useState<'Entrada' | 'Saída'>('Saída');
-  const [method, setMethod] = useState<'Dinheiro' | 'Cartão'>('Dinheiro');
-  const [selectedCard, setSelectedCard] = useState(cards[0]?.id || '');
-  const [installments, setInstallments] = useState(1);
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [isSaving, setIsSaving] = useState(false);
-
-  const [showAlert, setShowAlert] = useState(false);
-  const [alertMessages, setAlertMessages] = useState<string[]>([]);
-
-  // Converte valor string (com virgula ou ponto) para float com segurança
-  const parseAmount = (val: string) => {
-    if (!val) return 0;
-    const cleanVal = val.replace(',', '.').replace(/[^0-9.]/g, ''); 
-    const result = parseFloat(cleanVal);
-    return isNaN(result) ? 0 : result;
-  };
-
-  const checkBudgets = () => {
-    const val = parseAmount(amount);
-    
-    if (val <= 0) {
-        alert("Por favor, insira um valor válido maior que zero.");
-        return;
-    }
-    if (!desc.trim()) {
-        alert("Por favor, dê um nome para a transação.");
-        return;
-    }
-
-    const messages = [];
-
-    if (type === 'Saída') {
-        const catLimit = settings?.categoryLimits?.[cat] || 0;
-        if (catLimit > 0 && val > catLimit) {
-             messages.push(`Esta compra excede o limite de ${cat} (R$ ${formatCurrency(catLimit)}).`);
-        }
-    }
-
-    if (messages.length > 0) {
-        setAlertMessages(messages);
-        setShowAlert(true);
-    } else {
-        confirmSave();
-    }
-  };
-
-  const confirmSave = async () => {
-    setIsSaving(true);
-    try {
-        const val = parseAmount(amount);
-        
-        if (type === 'Saída' && method === 'Cartão' && installments > 1) {
-           const parentId = generateId();
-           const batch = [];
-           const baseDate = new Date(date);
-           
-           for(let i = 0; i < installments; i++) {
-              const currentInstDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, baseDate.getDate() + 1);
-              batch.push({
-                id: generateId(),
-                description: `${desc} (${i+1}/${installments})`,
-                amount: val / installments,
-                type, 
-                category: cat, 
-                date: currentInstDate.toISOString().split('T')[0],
-                month: currentInstDate.toISOString().slice(0, 7),
-                paymentMethod: method, 
-                cardId: selectedCard,
-                installment: { current: i+1, total: installments }, 
-                parentId
-              });
-           }
-           await onSave(batch);
-        } else {
-           await onSave([{
-             id: generateId(), 
-             description: desc, 
-             amount: val, 
-             type, 
-             category: cat,
-             date: date, 
-             month: date.slice(0, 7), 
-             paymentMethod: method,
-             cardId: method === 'Cartão' ? selectedCard : undefined
-           }]);
-        }
-    } catch (error) {
-        console.error("Erro ao salvar:", error);
-        alert("Erro ao salvar. Tente novamente.");
-        setIsSaving(false);
-    }
-  };
-
-  return (
-    <div className={`fixed inset-0 z-50 flex flex-col animate-in slide-in-from-bottom duration-300 ${darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
-      
-      {showAlert && (
-          <div className="absolute inset-0 z-[60] bg-black/50 flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in">
-              <div className={`rounded-3xl p-6 w-full max-w-sm shadow-2xl ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                  <div className="flex justify-center mb-4">
-                      <div className="bg-amber-100 p-4 rounded-full text-amber-600"><AlertTriangle size={32}/></div>
-                  </div>
-                  <h3 className={`text-xl font-bold text-center mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Atenção ao Orçamento</h3>
-                  <div className="space-y-2 mb-6">
-                      {alertMessages.map((msg, idx) => (
-                          <p key={idx} className={`text-sm text-center p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-300' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>{msg}</p>
-                      ))}
-                  </div>
-                  <div className="flex gap-3">
-                      <button onClick={() => { setShowAlert(false); setIsSaving(false); }} className={`flex-1 py-3 font-bold rounded-xl ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-500'}`}>Revisar</button>
-                      <button onClick={() => { setShowAlert(false); confirmSave(); }} className="flex-1 py-3 bg-amber-500 text-white font-bold rounded-xl shadow-lg shadow-amber-200">Confirmar</button>
-                  </div>
-              </div>
-          </div>
-      )}
-
-      <div className={`p-4 flex justify-between items-center border-b ${darkMode ? 'border-gray-800' : 'border-gray-100'}`}>
-        <button onClick={onCancel} className={`p-2 rounded-full ${darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-gray-100'}`}><X size={20}/></button>
-        <h2 className="font-bold text-lg">Nova Transação</h2>
-        <div className="w-9" />
-      </div>
-      <form onSubmit={(e) => { e.preventDefault(); checkBudgets(); }} className="p-6 space-y-6 flex-1 overflow-y-auto pb-24">
-        <div>
-           <label className="text-xs font-bold text-gray-400 uppercase">Valor Total</label>
-           <input type="tel" value={amount} onChange={e => setAmount(e.target.value)}
-             className={`w-full text-5xl font-bold bg-transparent placeholder-gray-500 focus:outline-none py-2 ${darkMode ? 'text-white' : 'text-gray-800'}`} placeholder="0,00" autoFocus />
-        </div>
-        <div className={`flex p-1 rounded-xl ${darkMode ? 'bg-gray-800' : 'bg-gray-100'}`}>
-          <button type="button" onClick={() => setType('Saída')} className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${type === 'Saída' ? (darkMode ? 'bg-gray-700 text-rose-400' : 'bg-white text-rose-600 shadow-sm') : 'text-gray-400'}`}>Despesa</button>
-          <button type="button" onClick={() => setType('Entrada')} className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${type === 'Entrada' ? (darkMode ? 'bg-gray-700 text-emerald-400' : 'bg-white text-emerald-600 shadow-sm') : 'text-gray-400'}`}>Receita</button>
-        </div>
-        <div className="space-y-2">
-           <label className="text-xs font-bold text-gray-400 uppercase">Descrição</label>
-           <input value={desc} onChange={e => setDesc(e.target.value)} className={`w-full p-3 border rounded-xl outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-gray-50 border-gray-100'}`} placeholder="Ex: Mercado" />
-        </div>
-        <div className="space-y-2">
-           <label className="text-xs font-bold text-gray-400 uppercase">Data</label>
-           <input type="date" value={date} onChange={e => setDate(e.target.value)} className={`w-full p-3 border rounded-xl outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-gray-50 border-gray-100'}`} />
-        </div>
-        {type === 'Saída' && (
-          <div className={`space-y-4 pt-4 border-t ${darkMode ? 'border-gray-800' : 'border-gray-100'}`}>
-             <label className="text-xs font-bold text-gray-400 uppercase">Pagamento</label>
-             <div className="flex gap-2">
-               <button type="button" onClick={() => setMethod('Dinheiro')} className={`flex-1 p-3 rounded-xl border ${method === 'Dinheiro' ? (darkMode ? 'border-emerald-600 bg-emerald-900/30 text-emerald-400' : 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold') : (darkMode ? 'border-gray-700 text-gray-500' : 'border-gray-200 text-gray-500')}`}>Dinheiro/Pix</button>
-               <button type="button" onClick={() => setMethod('Cartão')} className={`flex-1 p-3 rounded-xl border ${method === 'Cartão' ? (darkMode ? 'border-emerald-600 bg-emerald-900/30 text-emerald-400' : 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold') : (darkMode ? 'border-gray-700 text-gray-500' : 'border-gray-200 text-gray-500')}`}>Cartão</button>
-             </div>
-             {method === 'Cartão' && (
-               <div className="space-y-4 animate-in fade-in">
-                 <select value={selectedCard} onChange={e => setSelectedCard(e.target.value)} className={`w-full p-3 border rounded-xl outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-200'}`}>
-                     {cards.map((c: any) => <option key={c.id} value={c.id}>{c.name} ({c.holder})</option>)}
-                 </select>
-                 <select value={installments} onChange={e => setInstallments(Number(e.target.value))} className={`w-full p-3 border rounded-xl outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-200'}`}>
-                     <option value={1}>À vista (1x)</option>
-                     {[2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n}x</option>)}
-                 </select>
-               </div>
-             )}
-          </div>
-        )}
-        <div className="space-y-2 pt-2">
-          <label className="text-xs font-bold text-gray-400 uppercase">Categoria</label>
-          <div className="flex flex-wrap gap-2">
-            {categories.map((c: string) => (
-               <button key={c} type="button" onClick={() => setCat(c)} 
-                 className={`px-4 py-2 rounded-full text-sm font-medium border transition-all ${cat === c ? 'bg-emerald-600 text-white border-emerald-600' : (darkMode ? 'bg-gray-800 border-gray-700 text-gray-400' : 'bg-white text-gray-600 border-gray-200')}`}>
-                 {c}
-               </button>
-            ))}
-          </div>
-        </div>
-        <button type="submit" disabled={isSaving} className={`w-full py-4 font-bold rounded-2xl shadow-lg transition-all ${isSaving ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 text-white shadow-emerald-200'}`}>
-            {isSaving ? 'Salvando...' : 'Confirmar'}
-        </button>
-      </form>
-    </div>
-  );
-};
 
 // --- 4. APP PRINCIPAL ---
 export default function App() {
@@ -852,7 +894,7 @@ export default function App() {
   const [rawTransactions, setRawTransactions] = useState<Transaction[]>([]);
   const [cards, setCards] = useState<CardData[]>(INITIAL_CARDS);
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
-  const [settings, setSettings] = useState<UserSettings>({ monthlyIncome: 5000, financialGoal: 1000, darkMode: false, categoryLimits: {} });
+  const [settings, setSettings] = useState<UserSettings>({ monthlyIncome: 5000, financialGoal: 1000, goals: [], darkMode: false, categoryLimits: {} });
   
   const [screen, setScreen] = useState<AppScreen>(AppScreen.Home);
   const [loading, setLoading] = useState(true);
@@ -921,19 +963,16 @@ export default function App() {
     setScreen(AppScreen.Home);
   };
 
-  // Funcao inteligente para reescrever transacoes quando muda a estrutura (ex: 5x para 10x)
   const rewriteTransaction = async (oldT: Transaction, newData: any, isSimpleUpdate = false) => {
      if(!user) return;
      const batch = writeBatch(db);
 
-     // Se for update simples (só mudou nome/data), não precisa deletar e recriar tudo
      if (isSimpleUpdate) {
          batch.update(doc(db, `users/${user.uid}/transactions`, oldT.id), newData);
          await batch.commit();
          return;
      }
 
-     // Se for mudança estrutural (ex: Pix -> Cartão ou Parcelas), deleta o grupo antigo
      if (oldT.parentId) {
         const siblings = rawTransactions.filter(rt => rt.parentId === oldT.parentId);
         siblings.forEach(s => batch.delete(doc(db, `users/${user.uid}/transactions`, s.id)));
@@ -941,7 +980,6 @@ export default function App() {
         batch.delete(doc(db, `users/${user.uid}/transactions`, oldT.id));
      }
 
-     // Cria novas transações baseadas nos novos dados
      if (newData.paymentMethod === 'Cartão' && newData.installments > 1) {
         const parentId = generateId();
         const baseDate = new Date(newData.date);
@@ -982,19 +1020,14 @@ export default function App() {
       if(!user || !t.parentId || !t.installment) return;
       const batch = writeBatch(db);
 
-      // Pega todas as parcelas futuras (incluindo a atual, se quiser quitar agora)
       const currentNum = t.installment.current;
       const futureInstallments = rawTransactions.filter(rt => rt.parentId === t.parentId && rt.installment && rt.installment.current >= currentNum);
-      
-      // Soma o valor total restante
       const totalRemaining = futureInstallments.reduce((acc, curr) => acc + curr.amount, 0);
 
-      // Deleta as futuras
       futureInstallments.forEach(inst => {
          batch.delete(doc(db, `users/${user.uid}/transactions`, inst.id));
       });
 
-      // Cria uma nova transação consolidada para HOJE
       const newId = generateId();
       const today = new Date().toISOString().split('T')[0];
       
@@ -1006,8 +1039,8 @@ export default function App() {
           category: t.category,
           date: today,
           month: today.slice(0, 7),
-          paymentMethod: 'Dinheiro', // Geralmente antecipação se paga no ato, ou entra na fatura atual como valor único
-          cardId: t.cardId // Mantem no cartão para pagar na fatura atual
+          paymentMethod: 'Dinheiro', 
+          cardId: t.cardId
       });
 
       await batch.commit();
@@ -1016,8 +1049,6 @@ export default function App() {
   const deleteTransaction = async (t: Transaction) => {
     if(!user) return;
     const batch = writeBatch(db);
-    
-    // Agora o delete é sempre GLOBAL para corrigir erro, ou seja, apaga tudo
     if (t.installment && t.parentId) {
        const allInstallments = rawTransactions.filter(rt => rt.parentId === t.parentId);
        allInstallments.forEach(inst => {
@@ -1029,7 +1060,6 @@ export default function App() {
     await batch.commit();
   };
 
-  // ... (Funções de Settings, Cards permanecem iguais)
   const updateSettings = async (newSettings: UserSettings) => {
      if(!user) return;
      setSettings(newSettings);
