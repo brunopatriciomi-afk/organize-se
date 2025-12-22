@@ -26,7 +26,7 @@ export interface Goal {
 
 export interface UserSettings {
   monthlyIncome: number;
-  goals: Goal[]; // Agora aceita múltiplas metas
+  goals: Goal[];
   darkMode: boolean;
   categoryLimits: Record<string, number>;
 }
@@ -50,7 +50,7 @@ export interface Transaction {
   date: string;
   month: string;
   paymentMethod: 'Dinheiro' | 'Cartão';
-  cardId?: string;
+  cardId?: string | null; // Aceita null
   installment?: { current: number; total: number };
   parentId?: string;
 }
@@ -236,16 +236,13 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
   const [cat, setCat] = useState(transaction.category);
   const [date, setDate] = useState(transaction.date);
   
-  // Estados para edição complexa
   const [amount, setAmount] = useState(transaction.amount); 
   const [paymentMethod, setPaymentMethod] = useState<'Dinheiro'|'Cartão'>(transaction.paymentMethod);
   const [selectedCard, setSelectedCard] = useState(transaction.cardId || cards[0]?.id || '');
   const [installments, setInstallments] = useState(transaction.installment?.total || 1);
 
-  // Carregar dados iniciais
   useEffect(() => {
      if (transaction.installment) {
-         // Se for parcelado, sempre mostra o TOTAL para edição
          setAmount(transaction.amount * transaction.installment.total);
      } else {
          setAmount(transaction.amount);
@@ -255,7 +252,6 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
   const handleSave = () => {
     const finalAmount = Number(amount);
     
-    // Verifica se houve mudança estrutural (forma pagto ou parcelas)
     const isStructuralChange = 
         paymentMethod !== transaction.paymentMethod ||
         (paymentMethod === 'Cartão' && installments !== (transaction.installment?.total || 1)) ||
@@ -269,7 +265,7 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
                 category: cat,
                 date: date,
                 paymentMethod,
-                cardId: selectedCard,
+                cardId: paymentMethod === 'Cartão' ? selectedCard : null,
                 installments
             });
             onClose();
@@ -279,7 +275,8 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
         if (transaction.installment) {
             saveAmount = finalAmount / transaction.installment.total; 
         }
-        onRewrite(transaction, { ...transaction, description: desc, amount: saveAmount, category: cat, date, cardId: selectedCard }, true);
+        const cardIdToSave = paymentMethod === 'Cartão' ? selectedCard : null;
+        onRewrite(transaction, { ...transaction, description: desc, amount: saveAmount, category: cat, date, cardId: cardIdToSave }, true);
         onClose();
     }
   };
@@ -365,14 +362,169 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
   );
 };
 
-// --- TELA: PERFIL (COM MÚLTIPLAS METAS) ---
+// --- (CardsScreen) ---
+const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDeleteCard, darkMode }: any) => {
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editHolder, setEditHolder] = useState('');
+
+  const getInvoiceTotal = (cardId: string, monthKey: string) => {
+    return transactions
+      .filter((t: Transaction) => t.cardId === cardId && t.month === monthKey && t.type === 'Saída')
+      .reduce((acc: number, t: Transaction) => acc + t.amount, 0);
+  };
+
+  const activeCard = cards.find((c: CardData) => c.id === selectedCardId);
+
+  const startEditing = () => {
+    if(activeCard) {
+      setEditName(activeCard.name);
+      setEditHolder(activeCard.holder);
+      setIsEditing(true);
+    }
+  };
+
+  const saveEdit = () => {
+    if(activeCard) {
+      onSaveCard({ ...activeCard, name: editName, holder: editHolder });
+      setIsEditing(false);
+    }
+  };
+  
+  const confirmDeleteCard = () => {
+    if(confirm('Tem certeza? Isso apagará este cartão e todas as configurações dele.')) onDeleteCard(activeCard.id);
+  }
+
+  if (selectedCardId && activeCard) {
+    const currentInvoice = getInvoiceTotal(activeCard.id, currentMonthKey);
+    const [y, mStr] = currentMonthKey.split('-');
+    const monthName = MONTHS_FULL[parseInt(mStr) - 1];
+
+    const futureInvoices = [1, 2, 3].map(offset => {
+      const date = new Date(parseInt(y), parseInt(mStr) - 1 + offset, 1);
+      const key = getMonthKey(date);
+      const total = getInvoiceTotal(activeCard.id, key);
+      return { label: MONTHS[date.getMonth()], total, key };
+    });
+
+    return (
+       <div className={`p-4 pb-32 space-y-6 min-h-full ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+         <div className="flex items-center justify-between">
+            <button onClick={() => setSelectedCardId(null)} className={`p-2 rounded-full ${darkMode ? 'hover:bg-gray-800 text-white' : 'hover:bg-white text-gray-600'}`}><ChevronLeft size={24}/></button>
+            <h2 className={`font-bold text-lg ${darkMode ? 'text-white' : 'text-gray-800'}`}>{activeCard.name} ({activeCard.holder})</h2>
+            <button onClick={startEditing} className={`p-2 rounded-full ${darkMode ? 'hover:bg-gray-800 text-white' : 'hover:bg-white text-gray-600'}`}><Edit2 size={20}/></button>
+         </div>
+
+         {isEditing && (
+           <div className={`p-4 rounded-2xl shadow-lg border space-y-3 animate-in fade-in ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+              <h3 className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Editar Cartão</h3>
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Nome do Cartão</label>
+                <input value={editName} onChange={e=>setEditName(e.target.value)} className={`w-full p-2 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200'}`}/>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Titular (Nome)</label>
+                <input value={editHolder} onChange={e=>setEditHolder(e.target.value)} placeholder="Ex: Bruno" className={`w-full p-2 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200'}`}/>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setIsEditing(false)} className="flex-1 py-2 text-gray-500 font-bold text-xs">Cancelar</button>
+                <button onClick={saveEdit} className="flex-1 py-2 bg-emerald-600 text-white rounded-lg font-bold text-xs">Salvar</button>
+              </div>
+              <button onClick={confirmDeleteCard} className="w-full py-2 bg-rose-50 text-rose-500 rounded-lg font-bold text-xs mt-2 border border-rose-100 hover:bg-rose-100">Excluir Cartão</button>
+           </div>
+         )}
+
+         <div className={`rounded-[24px] p-6 shadow-sm border text-center ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+            <div className="flex items-center gap-2 mb-4">
+               <CreditCard size={18} className="text-emerald-500"/>
+               <span className="text-emerald-500 font-bold text-xs uppercase tracking-widest">FATURA — {monthName.toUpperCase()}</span>
+            </div>
+            <h1 className={`text-4xl font-bold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>{formatCurrency(currentInvoice)}</h1>
+            <p className="text-xs text-gray-400 mb-8">Total da Fatura</p>
+
+            <div className={`flex justify-between border-t pt-6 ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">Fecha em</p>
+                  <p className={`font-bold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{activeCard.closingDay.toString().padStart(2,'0')}/{mStr}</p>
+                </div>
+                <div className={`w-px mx-4 ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}></div>
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase font-bold mb-1 text-rose-500">Vence em</p>
+                  <p className="font-bold text-rose-500">{activeCard.dueDay.toString().padStart(2,'0')}/{mStr}</p>
+                </div>
+            </div>
+         </div>
+
+         <div>
+            <h3 className={`font-bold mb-4 text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Próximas Faturas</h3>
+            <div className="space-y-3">
+               {futureInvoices.every(i => i.total === 0) ? (
+                 <div className={`border-2 border-dashed rounded-2xl p-6 text-center text-sm ${darkMode ? 'border-gray-700 text-gray-500' : 'border-gray-200 text-gray-400'}`}>
+                   Nenhuma fatura futura prevista.
+                 </div>
+               ) : (
+                 futureInvoices.map(inv => (
+                   <div key={inv.key} className={`flex justify-between items-center p-4 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+                      <span className="font-bold text-gray-500 uppercase text-xs">{inv.label}</span>
+                      <span className={`font-bold ${inv.total > 0 ? (darkMode ? 'text-gray-200' : 'text-gray-800') : 'text-gray-300'}`}>{inv.total > 0 ? formatCurrency(inv.total) : '-'}</span>
+                   </div>
+                 ))
+               )}
+            </div>
+         </div>
+       </div>
+    );
+  }
+
+  return (
+    <div className={`p-4 pb-32 space-y-6 ${darkMode ? 'text-white' : ''}`}>
+      <h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>Meus Cartões</h2>
+      <div className="space-y-4">
+        {cards.map((card: CardData) => {
+           const invoice = getInvoiceTotal(card.id, currentMonthKey);
+           const limitUsedPercent = Math.min((invoice / card.limit) * 100, 100);
+           
+           return (
+             <div key={card.id} onClick={() => setSelectedCardId(card.id)} 
+               className={`rounded-2xl p-5 shadow-sm border border-l-4 cursor-pointer hover:shadow-md transition-all relative overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'} ${card.color || 'border-l-emerald-500'}`}
+             >
+                <div className="flex justify-between items-start mb-6">
+                   <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-full ${darkMode ? 'bg-gray-700 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}><CreditCard size={20}/></div>
+                      <div>
+                        <h3 className={`font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>{card.name} ({card.holder})</h3>
+                        <p className="text-xs text-gray-400">{card.holder}</p>
+                      </div>
+                   </div>
+                   <ChevronRight size={20} className="text-gray-300"/>
+                </div>
+                <div>
+                   <div className="flex justify-between text-xs mb-1">
+                      <span className="text-gray-400">Limite Disponível</span>
+                      <span className={`font-bold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{formatCurrency(card.limit - invoice)}</span>
+                   </div>
+                   <div className={`h-1.5 w-full rounded-full overflow-hidden ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                      <div className="h-full bg-emerald-500 rounded-full" style={{width: `${100 - limitUsedPercent}%`}}></div>
+                   </div>
+                </div>
+             </div>
+           );
+        })}
+      </div>
+      <button onClick={() => onSaveCard({ id: generateId(), name: 'Novo Cartão', holder: 'Titular', limit: 1000, closingDay: 1, dueDay: 10, color: 'border-l-gray-500' })} 
+        className={`w-full py-4 border-2 border-dashed rounded-2xl font-bold transition-colors ${darkMode ? 'border-gray-700 text-gray-500 hover:border-emerald-500 hover:text-emerald-500' : 'border-gray-300 text-gray-400 hover:bg-gray-50 hover:border-emerald-500 hover:text-emerald-500'}`}>
+        + Adicionar Novo Cartão
+      </button>
+    </div>
+  );
+};
 const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, onDeleteCategory, onLogout, monthlySavings, darkMode }: any) => {
   const [showCats, setShowCats] = useState(false);
   const [newCat, setNewCat] = useState('');
   const [isEditingIncome, setIsEditingIncome] = useState(false);
   const [tempIncome, setTempIncome] = useState(settings.monthlyIncome.toString());
 
-  // Estado para Metas
   const [newGoalName, setNewGoalName] = useState('');
   const [newGoalAmount, setNewGoalAmount] = useState('');
 
@@ -547,8 +699,14 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
   // Limpeza de string numérica robusta
   const parseAmount = (val: string) => {
     if (!val) return 0;
-    // Aceita 1000,50 ou 1000.50 -> Converte para 1000.50
-    const cleanVal = val.replace(',', '.').replace(/[^0-9.]/g, ''); 
+    // Tenta interpretar formato brasileiro se houver virgula
+    let cleanVal = val;
+    if(val.includes(',')) {
+       // Remove pontos de milhar, troca virgula por ponto
+       cleanVal = val.replace(/\./g, '').replace(',', '.');
+    }
+    // Remove tudo que não for numero ou ponto
+    cleanVal = cleanVal.replace(/[^0-9.]/g, '');
     const result = parseFloat(cleanVal);
     return isNaN(result) ? 0 : result;
   };
@@ -601,6 +759,9 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
     try {
         const val = parseAmount(amount);
         
+        // CORREÇÃO CRÍTICA: Se não for cartão, envia NULL, não undefined
+        const cardIdToSave = method === 'Cartão' ? selectedCard : null;
+
         if (type === 'Saída' && method === 'Cartão' && installments > 1) {
            const parentId = generateId();
            const batch = [];
@@ -617,7 +778,7 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
                 date: currentInstDate.toISOString().split('T')[0],
                 month: currentInstDate.toISOString().slice(0, 7),
                 paymentMethod: method, 
-                cardId: selectedCard,
+                cardId: cardIdToSave,
                 installment: { current: i+1, total: installments }, 
                 parentId
               });
@@ -633,7 +794,7 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
              date: date, 
              month: date.slice(0, 7), 
              paymentMethod: method,
-             cardId: method === 'Cartão' ? selectedCard : undefined
+             cardId: cardIdToSave
            }]);
         }
     } catch (error) {
@@ -730,164 +891,6 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
   );
 };
 
-// --- (CardsScreen permanece igual, código abaixo omitido para caber, mas você DEVE manter o anterior) ---
-const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDeleteCard, darkMode }: any) => {
-  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editName, setEditName] = useState('');
-  const [editHolder, setEditHolder] = useState('');
-
-  const getInvoiceTotal = (cardId: string, monthKey: string) => {
-    return transactions
-      .filter((t: Transaction) => t.cardId === cardId && t.month === monthKey && t.type === 'Saída')
-      .reduce((acc: number, t: Transaction) => acc + t.amount, 0);
-  };
-
-  const activeCard = cards.find((c: CardData) => c.id === selectedCardId);
-
-  const startEditing = () => {
-    if(activeCard) {
-      setEditName(activeCard.name);
-      setEditHolder(activeCard.holder);
-      setIsEditing(true);
-    }
-  };
-
-  const saveEdit = () => {
-    if(activeCard) {
-      onSaveCard({ ...activeCard, name: editName, holder: editHolder });
-      setIsEditing(false);
-    }
-  };
-  
-  const confirmDeleteCard = () => {
-    if(confirm('Tem certeza? Isso apagará este cartão e todas as configurações dele.')) onDeleteCard(activeCard.id);
-  }
-
-  if (selectedCardId && activeCard) {
-    const currentInvoice = getInvoiceTotal(activeCard.id, currentMonthKey);
-    const [y, mStr] = currentMonthKey.split('-');
-    const monthName = MONTHS_FULL[parseInt(mStr) - 1];
-
-    const futureInvoices = [1, 2, 3].map(offset => {
-      const date = new Date(parseInt(y), parseInt(mStr) - 1 + offset, 1);
-      const key = getMonthKey(date);
-      const total = getInvoiceTotal(activeCard.id, key);
-      return { label: MONTHS[date.getMonth()], total, key };
-    });
-
-    return (
-       <div className={`p-4 pb-32 space-y-6 min-h-full ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
-         <div className="flex items-center justify-between">
-            <button onClick={() => setSelectedCardId(null)} className={`p-2 rounded-full ${darkMode ? 'hover:bg-gray-800 text-white' : 'hover:bg-white text-gray-600'}`}><ChevronLeft size={24}/></button>
-            <h2 className={`font-bold text-lg ${darkMode ? 'text-white' : 'text-gray-800'}`}>{activeCard.name} ({activeCard.holder})</h2>
-            <button onClick={startEditing} className={`p-2 rounded-full ${darkMode ? 'hover:bg-gray-800 text-white' : 'hover:bg-white text-gray-600'}`}><Edit2 size={20}/></button>
-         </div>
-
-         {isEditing && (
-           <div className={`p-4 rounded-2xl shadow-lg border space-y-3 animate-in fade-in ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-              <h3 className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Editar Cartão</h3>
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase">Nome do Cartão</label>
-                <input value={editName} onChange={e=>setEditName(e.target.value)} className={`w-full p-2 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200'}`}/>
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase">Titular (Nome)</label>
-                <input value={editHolder} onChange={e=>setEditHolder(e.target.value)} placeholder="Ex: Bruno" className={`w-full p-2 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200'}`}/>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => setIsEditing(false)} className="flex-1 py-2 text-gray-500 font-bold text-xs">Cancelar</button>
-                <button onClick={saveEdit} className="flex-1 py-2 bg-emerald-600 text-white rounded-lg font-bold text-xs">Salvar</button>
-              </div>
-              <button onClick={confirmDeleteCard} className="w-full py-2 bg-rose-50 text-rose-500 rounded-lg font-bold text-xs mt-2 border border-rose-100 hover:bg-rose-100">Excluir Cartão</button>
-           </div>
-         )}
-
-         <div className={`rounded-[24px] p-6 shadow-sm border text-center ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-            <div className="flex items-center gap-2 mb-4">
-               <CreditCard size={18} className="text-emerald-500"/>
-               <span className="text-emerald-500 font-bold text-xs uppercase tracking-widest">FATURA — {monthName.toUpperCase()}</span>
-            </div>
-            <h1 className={`text-4xl font-bold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>{formatCurrency(currentInvoice)}</h1>
-            <p className="text-xs text-gray-400 mb-8">Total da Fatura</p>
-
-            <div className={`flex justify-between border-t pt-6 ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
-                <div>
-                  <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">Fecha em</p>
-                  <p className={`font-bold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{activeCard.closingDay.toString().padStart(2,'0')}/{mStr}</p>
-                </div>
-                <div className={`w-px mx-4 ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}></div>
-                <div>
-                  <p className="text-[10px] text-gray-400 uppercase font-bold mb-1 text-rose-500">Vence em</p>
-                  <p className="font-bold text-rose-500">{activeCard.dueDay.toString().padStart(2,'0')}/{mStr}</p>
-                </div>
-            </div>
-         </div>
-
-         <div>
-            <h3 className={`font-bold mb-4 text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Próximas Faturas</h3>
-            <div className="space-y-3">
-               {futureInvoices.every(i => i.total === 0) ? (
-                 <div className={`border-2 border-dashed rounded-2xl p-6 text-center text-sm ${darkMode ? 'border-gray-700 text-gray-500' : 'border-gray-200 text-gray-400'}`}>
-                   Nenhuma fatura futura prevista.
-                 </div>
-               ) : (
-                 futureInvoices.map(inv => (
-                   <div key={inv.key} className={`flex justify-between items-center p-4 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-                      <span className="font-bold text-gray-500 uppercase text-xs">{inv.label}</span>
-                      <span className={`font-bold ${inv.total > 0 ? (darkMode ? 'text-gray-200' : 'text-gray-800') : 'text-gray-300'}`}>{inv.total > 0 ? formatCurrency(inv.total) : '-'}</span>
-                   </div>
-                 ))
-               )}
-            </div>
-         </div>
-       </div>
-    );
-  }
-
-  return (
-    <div className={`p-4 pb-32 space-y-6 ${darkMode ? 'text-white' : ''}`}>
-      <h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>Meus Cartões</h2>
-      <div className="space-y-4">
-        {cards.map((card: CardData) => {
-           const invoice = getInvoiceTotal(card.id, currentMonthKey);
-           const limitUsedPercent = Math.min((invoice / card.limit) * 100, 100);
-           
-           return (
-             <div key={card.id} onClick={() => setSelectedCardId(card.id)} 
-               className={`rounded-2xl p-5 shadow-sm border border-l-4 cursor-pointer hover:shadow-md transition-all relative overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'} ${card.color || 'border-l-emerald-500'}`}
-             >
-                <div className="flex justify-between items-start mb-6">
-                   <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-full ${darkMode ? 'bg-gray-700 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}><CreditCard size={20}/></div>
-                      <div>
-                        <h3 className={`font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>{card.name} ({card.holder})</h3>
-                        <p className="text-xs text-gray-400">{card.holder}</p>
-                      </div>
-                   </div>
-                   <ChevronRight size={20} className="text-gray-300"/>
-                </div>
-                <div>
-                   <div className="flex justify-between text-xs mb-1">
-                      <span className="text-gray-400">Limite Disponível</span>
-                      <span className={`font-bold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{formatCurrency(card.limit - invoice)}</span>
-                   </div>
-                   <div className={`h-1.5 w-full rounded-full overflow-hidden ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                      <div className="h-full bg-emerald-500 rounded-full" style={{width: `${100 - limitUsedPercent}%`}}></div>
-                   </div>
-                </div>
-             </div>
-           );
-        })}
-      </div>
-      <button onClick={() => onSaveCard({ id: generateId(), name: 'Novo Cartão', holder: 'Titular', limit: 1000, closingDay: 1, dueDay: 10, color: 'border-l-gray-500' })} 
-        className={`w-full py-4 border-2 border-dashed rounded-2xl font-bold transition-colors ${darkMode ? 'border-gray-700 text-gray-500 hover:border-emerald-500 hover:text-emerald-500' : 'border-gray-300 text-gray-400 hover:bg-gray-50 hover:border-emerald-500 hover:text-emerald-500'}`}>
-        + Adicionar Novo Cartão
-      </button>
-    </div>
-  );
-};
-
 // --- 4. APP PRINCIPAL ---
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -920,6 +923,7 @@ export default function App() {
     
     // Forçar CSS global para evitar comportamento elástico
     document.body.style.touchAction = 'pan-x pan-y';
+    document.body.style.overscrollBehaviorY = 'none'; // Trava bounce no iPhone
   }, []);
 
   useEffect(() => {
@@ -1010,7 +1014,8 @@ export default function App() {
             category: newData.category,
             date: newData.date,
             month: newData.date.slice(0, 7),
-            paymentMethod: 'Dinheiro'
+            paymentMethod: 'Dinheiro',
+            cardId: null
         });
      }
      await batch.commit();
