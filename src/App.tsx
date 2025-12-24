@@ -92,7 +92,12 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, onTransferBalan
       <div className={`rounded-[32px] p-6 relative overflow-hidden transition-colors ${darkMode ? 'bg-emerald-900 text-white shadow-none' : 'bg-emerald-600 text-white shadow-xl shadow-emerald-100/50'}`}>
         <div className="absolute top-0 right-0 p-4 opacity-10"><Wallet size={120} /></div>
         <p className="text-emerald-100 font-medium mb-1 text-sm">Saldo em Conta</p>
-        <h1 className="text-4xl font-bold mb-8">{formatCurrency(monthDetails.balance)}</h1>
+        
+        {/* CORREÇÃO APLICADA: Se o saldo for negativo (< 0), usa a cor rose-300 (vermelho claro), senão usa a cor padrão */}
+        <h1 className={`text-4xl font-bold mb-8 ${monthDetails.balance < 0 ? 'text-rose-300' : 'text-white'}`}>
+            {formatCurrency(monthDetails.balance)}
+        </h1>
+
         <div className="flex gap-4">
           <div className="flex items-center gap-3 bg-black/20 px-3 py-3 rounded-2xl flex-1 backdrop-blur-sm min-w-0">
             <div className="p-1.5 bg-emerald-400/20 rounded-full shrink-0"><ArrowUpCircle size={18} className="text-emerald-200"/></div>
@@ -166,7 +171,6 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, onTransferBalan
     </div>
   );
 };
-
 // --- TELA: RELATÓRIOS (CORRIGIDA - SALDO INICIAL E PORCENTAGEM) ---
 const Reports = ({ transactions, categories, settings, darkMode, onSelectTransaction }: any) => {
   const [filterType, setFilterType] = useState<'Tudo' | 'Saída' | 'Entrada' | 'Investimento'>('Tudo');
@@ -410,7 +414,7 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
   );
 };
 
-// --- MODAL DE EDIÇÃO ---
+// --- MODAL DE EDIÇÃO (CORREÇÃO 2: Editar Cartão e Parcelas) ---
 const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticipate, onDelete, settings, cards, darkMode }: any) => {
   const [desc, setDesc] = useState(transaction.description);
   const [cat, setCat] = useState(transaction.category);
@@ -441,14 +445,15 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
   const handleSave = () => {
     const finalAmount = Number(amount);
     
-    // Lógica simplificada de edição
+    // Lógica atualizada para enviar os novos dados de cartão e parcelas
     onRewrite(transaction, { 
         description: desc, 
         amount: finalAmount, 
         category: cat, 
         date: date, 
         paymentMethod, 
-        cardId: paymentMethod === 'Cartão' ? selectedCard : null 
+        cardId: paymentMethod === 'Cartão' ? selectedCard : null,
+        installments: paymentMethod === 'Cartão' ? installments : 1
     }, true);
     onClose();
   };
@@ -484,6 +489,24 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
                             <button onClick={()=>setPaymentMethod('Cartão')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${paymentMethod==='Cartão' ? 'bg-emerald-100 border-emerald-500 text-emerald-700' : 'border-gray-200 text-gray-400'}`}>Cartão</button>
                         </div>
                     </div>
+
+                    {/* AQUI ESTÁ A NOVIDADE: Seletores aparecem se for Cartão */}
+                    {paymentMethod === 'Cartão' && (
+                        <div className="flex gap-2 animate-in fade-in">
+                            <div className="flex-1">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase">Cartão</label>
+                                <select value={selectedCard} onChange={e=>setSelectedCard(e.target.value)} className={`w-full p-2 rounded-xl border text-sm ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`}>
+                                    {cards.map((c:any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                </select>
+                            </div>
+                            <div className="w-24">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase">Parcelas</label>
+                                <select value={installments} onChange={e=>setInstallments(Number(e.target.value))} className={`w-full p-2 rounded-xl border text-sm ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`}>
+                                    {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n}x</option>)}
+                                </select>
+                            </div>
+                        </div>
+                    )}
                  </>
              )}
 
@@ -520,7 +543,6 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
     </div>
   );
 };
-
 // --- (CardsScreen - ATUALIZADO) ---
 const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDeleteCard, darkMode, onSelectTransaction }: any) => {
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
