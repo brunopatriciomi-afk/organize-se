@@ -68,9 +68,6 @@ export interface Transaction {
 const DEFAULT_EXPENSE_CATS = ['Alimentação', 'Moradia', 'Transporte', 'Lazer', 'Saúde', 'Educação', 'Compras', 'Serviços', 'Assinaturas'];
 const DEFAULT_INCOME_CATS = ['Salário', 'Bônus', 'Dinheiro Extra', 'Reembolso'];
 const DEFAULT_INVEST_CATS = ['Reserva', 'Casa', 'Carro', 'Aposentadoria'];
-
-// --- CORREÇÃO 3: DADOS DE EXEMPLO LIMPOS ---
-// Garante que não tem cartão do "Bruno" aqui
 const INITIAL_CARDS: CardData[] = [];
 
 const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -1167,21 +1164,59 @@ export default function App() {
     document.body.style.overscrollBehaviorY = 'none';
   }, []);
 
-  // Carregar dados do Firebase
-  useEffect(() => {
-    return onAuthStateChanged(auth, (u) => {
-      setUser(u); setLoading(false);
-      if(u) {
-        onSnapshot(query(collection(db, `users/${u.uid}/transactions`)), (snap) => {
-          const data = snap.docs.map(d => d.data() as Transaction);
-          data.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-          setRawTransactions(data);
-        });
-        onSnapshot(doc(db, `users/${u.uid}/settings`, 'cards'), (snap) => { if(snap.exists() && snap.data().list) setCards(snap.data().list); });
-        onSnapshot(doc(db, `users/${u.uid}/settings`, 'config'), (snap) => { if(snap.exists()) { const d = snap.data(); if(d.categories) setCategories(d.categories); if(d.userSettings) setSettings(d.userSettings); } });
-      }
-    });
-  }, []);
+// Carregar dados do Firebase
+useEffect(() => {
+  return onAuthStateChanged(auth, (u) => {
+    setUser(u); 
+    setLoading(false);
+    
+    if(u) {
+      // Se tem usuário, busca os dados
+      const unsubTrans = onSnapshot(query(collection(db, `users/${u.uid}/transactions`)), (snap) => {
+        const data = snap.docs.map(d => d.data() as Transaction);
+        data.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setRawTransactions(data);
+      });
+
+      const unsubCards = onSnapshot(doc(db, `users/${u.uid}/settings`, 'cards'), (snap) => { 
+          // Se o documento existe, usa ele. Se não (conta nova), ZERA a lista.
+          if(snap.exists() && snap.data().list) {
+              setCards(snap.data().list);
+          } else {
+              setCards([]); // <--- IMPORTANTE: Garante que começa vazio se não tiver nada no banco
+          }
+      });
+
+      const unsubConfig = onSnapshot(doc(db, `users/${u.uid}/settings`, 'config'), (snap) => { 
+          if(snap.exists()) { 
+              const d = snap.data(); 
+              if(d.categories) setCategories(d.categories); 
+              else setCategories(DEFAULT_EXPENSE_CATS); // Reseta se não tiver
+              
+              if(d.userSettings) setSettings(d.userSettings); 
+              else setSettings({ monthlyIncome: 0, goals: [], darkMode: false, categoryLimits: {} }); // Reseta se não tiver
+          } else {
+              // Conta nova: Restaura padrões
+              setCategories(DEFAULT_EXPENSE_CATS);
+              setSettings({ monthlyIncome: 0, goals: [], darkMode: false, categoryLimits: {} });
+          }
+      });
+
+      return () => {
+          unsubTrans();
+          unsubCards();
+          unsubConfig();
+      };
+
+    } else {
+      // SE NÃO TEM USUÁRIO (LOGOUT), LIMPA TUDO DA MEMÓRIA
+      setRawTransactions([]);
+      setCards([]); 
+      setCategories(DEFAULT_EXPENSE_CATS);
+      setSettings({ monthlyIncome: 0, goals: [], darkMode: false, categoryLimits: {} });
+    }
+  });
+}, []);
 
   const filteredTransactions = useMemo(() => rawTransactions.filter(t => t.month === selectedMonthKey), [rawTransactions, selectedMonthKey]);
   
