@@ -414,7 +414,7 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
   );
 };
 
-// --- MODAL DE EDIÇÃO (CORREÇÃO 4: Remove descrição duplicada) ---
+// --- MODAL DE EDIÇÃO (CORREÇÃO: Nome do Titular na Lista) ---
 const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticipate, onDelete, settings, cards, darkMode }: any) => {
   const [desc, setDesc] = useState(transaction.description);
   const [cat, setCat] = useState(transaction.category);
@@ -441,7 +441,6 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
   const handleSave = () => {
     const finalAmount = Number(amount);
     
-    // 1. Detecta mudança estrutural
     const isStructuralChange = 
         (transaction.paymentMethod !== paymentMethod) ||
         (paymentMethod === 'Cartão' && (
@@ -449,7 +448,6 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
             selectedCard !== transaction.cardId
         ));
 
-    // 2. Correção da Data (Recalcula início se necessário)
     let finalDate = date;
     if (isStructuralChange && paymentMethod === 'Cartão' && transaction.installment && transaction.installment.current > 1) {
         const d = new Date(date);
@@ -457,13 +455,10 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
         finalDate = d.toISOString().split('T')[0];
     }
 
-    // 3. CORREÇÃO DA DESCRIÇÃO (NOVO):
-    // Remove o contador antigo "(x/y)" do final do texto para não duplicar.
-    // Ex: "Sapato (1/2)" vira apenas "Sapato". O sistema depois adicionará o novo "(1/3)".
     const cleanDesc = desc.replace(/\s*\(\d+\/\d+\)$/, '');
 
     onRewrite(transaction, { 
-        description: cleanDesc, // Envia a descrição limpa
+        description: cleanDesc,
         amount: finalAmount, 
         category: cat, 
         date: finalDate, 
@@ -512,7 +507,11 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
                             <div className="flex-1">
                                 <label className="text-[10px] font-bold text-gray-400 uppercase">Cartão</label>
                                 <select value={selectedCard} onChange={e=>setSelectedCard(e.target.value)} className={`w-full p-2 rounded-xl border text-sm ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`}>
-                                    {cards.map((c:any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                    {cards.map((c:any) => (
+                                        <option key={c.id} value={c.id}>
+                                            {c.name} ({c.holder})
+                                        </option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="w-24">
@@ -985,7 +984,7 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
   );
 };
 
-// --- TELA: NOVA TRANSAÇÃO ---
+// --- TELA: NOVA TRANSAÇÃO (CORREÇÃO: Fechamento de Fatura + Nome do Titular) ---
 const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDetails, darkMode }: any) => {
   const [desc, setDesc] = useState('');
   const [amount, setAmount] = useState('');
@@ -1038,7 +1037,6 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
         const val = parseAmount(amount);
         let cardIdToSave = null;
         
-        // CORREÇÃO: Salva o ID do cartão se o método for Cartão (mesmo à vista)
         if (method === 'Cartão' && type === 'Saída') {
             cardIdToSave = selectedCard;
         }
@@ -1048,19 +1046,21 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
            const batch = [];
            const selectedCardData = cards.find((c:any) => c.id === selectedCard);
 
-           for(let i = 0; i < installments; i++) {
-              let d = new Date(date);
-              d.setDate(d.getDate() + 1); // Fuso
-              d.setMonth(d.getMonth() + i);
+           // LÓGICA DE FECHAMENTO (CORRIGIDA)
+           // Se o dia da compra for >= dia do fechamento, joga TUDO para o mês seguinte (+1 no offset)
+           let startMonthOffset = 0;
+           if (selectedCardData) {
+               // Cria data segura ignorando fuso horário para pegar o dia correto
+               const [y, m, d] = date.split('-').map(Number);
+               if (d >= selectedCardData.closingDay) {
+                   startMonthOffset = 1;
+               }
+           }
 
-              // LÓGICA DE FECHAMENTO: Se a data da compra for >= fechamento, joga para o próximo mês
-              if (selectedCardData) {
-                  const dayOfPurchase = new Date(date).getDate(); 
-                  // Aplica na primeira parcela (e seguintes pelo +i). Se comprou depois do fechamento, vira a fatura.
-                  if (dayOfPurchase >= selectedCardData.closingDay) {
-                      d.setMonth(d.getMonth() + 1);
-                  }
-              }
+           for(let i = 0; i < installments; i++) {
+              const [y, m, d] = date.split('-').map(Number);
+              // Cria a data baseada no offset calculado (Mês atual + i + offset do fechamento)
+              const installDate = new Date(y, (m - 1) + i + startMonthOffset, d);
 
               batch.push({ 
                   id: generateId(), 
@@ -1068,8 +1068,8 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
                   amount: val / installments, 
                   type, 
                   category: cat, 
-                  date: d.toISOString().split('T')[0], 
-                  month: d.toISOString().slice(0, 7), 
+                  date: installDate.toISOString().split('T')[0], 
+                  month: installDate.toISOString().slice(0, 7), 
                   paymentMethod: method, 
                   cardId: cardIdToSave, 
                   installment: installments > 1 ? { current: i+1, total: installments } : null, 
@@ -1094,14 +1094,26 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
         <div className={`flex p-1 rounded-xl ${darkMode ? 'bg-gray-800' : 'bg-gray-100'}`}><button type="button" onClick={() => setType('Saída')} className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${type === 'Saída' ? (darkMode ? 'bg-gray-700 text-rose-400' : 'bg-white text-rose-600 shadow-sm') : 'text-gray-400'}`}>Despesa</button><button type="button" onClick={() => setType('Entrada')} className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${type === 'Entrada' ? (darkMode ? 'bg-gray-700 text-emerald-400' : 'bg-white text-emerald-600 shadow-sm') : 'text-gray-400'}`}>Receita</button><button type="button" onClick={() => setType('Investimento')} className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${type === 'Investimento' ? (darkMode ? 'bg-gray-700 text-blue-400' : 'bg-white text-blue-600 shadow-sm') : 'text-gray-400'}`}>Investir</button></div>
         <div className="space-y-2"><label className="text-xs font-bold text-gray-400 uppercase">Descrição</label><input value={desc} onChange={e => setDesc(e.target.value)} className={`w-full p-3 border rounded-xl outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-gray-50 border-gray-100'}`} placeholder="Ex: Mercado" /></div>
         <div className="space-y-2"><label className="text-xs font-bold text-gray-400 uppercase">Data</label><input type="date" value={date} onChange={e => setDate(e.target.value)} className={`w-full p-3 border rounded-xl outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-gray-50 border-gray-100'}`} /></div>
-        {type === 'Saída' && (<div className={`space-y-4 pt-4 border-t ${darkMode ? 'border-gray-800' : 'border-gray-100'}`}><label className="text-xs font-bold text-gray-400 uppercase">Pagamento</label><div className="flex gap-2"><button type="button" onClick={() => setMethod('Dinheiro')} className={`flex-1 p-3 rounded-xl border ${method === 'Dinheiro' ? (darkMode ? 'border-emerald-600 bg-emerald-900/30 text-emerald-400' : 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold') : (darkMode ? 'border-gray-700 text-gray-500' : 'border-gray-200 text-gray-500')}`}>Dinheiro/Pix</button><button type="button" onClick={() => setMethod('Cartão')} className={`flex-1 p-3 rounded-xl border ${method === 'Cartão' ? (darkMode ? 'border-emerald-600 bg-emerald-900/30 text-emerald-400' : 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold') : (darkMode ? 'border-gray-700 text-gray-500' : 'border-gray-200 text-gray-500')}`}>Cartão</button></div>{method === 'Cartão' && (<div className="space-y-4 animate-in fade-in"><select value={selectedCard} onChange={e => setSelectedCard(e.target.value)} className={`w-full p-3 border rounded-xl outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-200'}`}>{cards.map((c: any) => <option key={c.id} value={c.id}>{c.name} ({c.holder})</option>)}</select><select value={installments} onChange={e => setInstallments(Number(e.target.value))} className={`w-full p-3 border rounded-xl outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-200'}`}><option value={1}>À vista (1x)</option>{[2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n}x</option>)}</select></div>)}</div>)}
+        
+        {/* PARTE DO CARTÃO (CORREÇÃO: MOSTRAR NOME + TITULAR) */}
+        {type === 'Saída' && (<div className={`space-y-4 pt-4 border-t ${darkMode ? 'border-gray-800' : 'border-gray-100'}`}><label className="text-xs font-bold text-gray-400 uppercase">Pagamento</label><div className="flex gap-2"><button type="button" onClick={() => setMethod('Dinheiro')} className={`flex-1 p-3 rounded-xl border ${method === 'Dinheiro' ? (darkMode ? 'border-emerald-600 bg-emerald-900/30 text-emerald-400' : 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold') : (darkMode ? 'border-gray-700 text-gray-500' : 'border-gray-200 text-gray-500')}`}>Dinheiro/Pix</button><button type="button" onClick={() => setMethod('Cartão')} className={`flex-1 p-3 rounded-xl border ${method === 'Cartão' ? (darkMode ? 'border-emerald-600 bg-emerald-900/30 text-emerald-400' : 'border-emerald-500 bg-emerald-50 text-emerald-700 font-bold') : (darkMode ? 'border-gray-700 text-gray-500' : 'border-gray-200 text-gray-500')}`}>Cartão</button></div>
+        {method === 'Cartão' && (<div className="space-y-4 animate-in fade-in">
+            <select value={selectedCard} onChange={e => setSelectedCard(e.target.value)} className={`w-full p-3 border rounded-xl outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-200'}`}>
+                {cards.map((c: any) => (
+                    <option key={c.id} value={c.id}>
+                        {c.name} ({c.holder})
+                    </option>
+                ))}
+            </select>
+            <select value={installments} onChange={e => setInstallments(Number(e.target.value))} className={`w-full p-3 border rounded-xl outline-none ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-200'}`}><option value={1}>À vista (1x)</option>{[2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n}x</option>)}</select>
+        </div>)}</div>)}
+        
         <div className="space-y-2 pt-2"><label className="text-xs font-bold text-gray-400 uppercase">Categoria</label><div className="flex flex-wrap gap-2">{currentCategories.map((c: string) => (<button key={c} type="button" onClick={() => setCat(c)} className={`px-4 py-2 rounded-full text-sm font-medium border transition-all ${cat === c ? 'bg-emerald-600 text-white border-emerald-600' : (darkMode ? 'bg-gray-800 border-gray-700 text-gray-400' : 'bg-white text-gray-600 border-gray-200')}`}>{c}</button>))}</div></div>
         <button type="submit" disabled={isSaving} className={`w-full py-4 font-bold rounded-2xl transition-all ${isSaving ? 'bg-gray-400 cursor-not-allowed' : (darkMode ? 'bg-emerald-600 text-white shadow-none' : 'bg-emerald-600 text-white shadow-emerald-200')}`}>{isSaving ? 'Salvando...' : 'Confirmar'}</button>
       </form>
     </div>
   );
 };
-
 // --- 4. APP PRINCIPAL (CORREÇÃO 4: CABEÇALHO COM SELETOR DE ANO/MÊS) ---
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
