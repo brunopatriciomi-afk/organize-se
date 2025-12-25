@@ -414,7 +414,7 @@ const Reports = ({ transactions, categories, settings, darkMode, onSelectTransac
   );
 };
 
-// --- MODAL DE EDIÇÃO (CORREÇÃO 2: Editar Cartão e Parcelas) ---
+// --- MODAL DE EDIÇÃO (CORREÇÃO 4: Remove descrição duplicada) ---
 const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticipate, onDelete, settings, cards, darkMode }: any) => {
   const [desc, setDesc] = useState(transaction.description);
   const [cat, setCat] = useState(transaction.category);
@@ -435,26 +435,43 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
   }, []);
 
   useEffect(() => {
-     if (transaction.installment) {
-         setAmount(transaction.amount); 
-     } else {
-         setAmount(transaction.amount);
-     }
+     setAmount(transaction.amount);
   }, [transaction]);
 
   const handleSave = () => {
     const finalAmount = Number(amount);
     
-    // Lógica atualizada para enviar os novos dados de cartão e parcelas
+    // 1. Detecta mudança estrutural
+    const isStructuralChange = 
+        (transaction.paymentMethod !== paymentMethod) ||
+        (paymentMethod === 'Cartão' && (
+            installments !== (transaction.installment?.total || 1) ||
+            selectedCard !== transaction.cardId
+        ));
+
+    // 2. Correção da Data (Recalcula início se necessário)
+    let finalDate = date;
+    if (isStructuralChange && paymentMethod === 'Cartão' && transaction.installment && transaction.installment.current > 1) {
+        const d = new Date(date);
+        d.setMonth(d.getMonth() - (transaction.installment.current - 1));
+        finalDate = d.toISOString().split('T')[0];
+    }
+
+    // 3. CORREÇÃO DA DESCRIÇÃO (NOVO):
+    // Remove o contador antigo "(x/y)" do final do texto para não duplicar.
+    // Ex: "Sapato (1/2)" vira apenas "Sapato". O sistema depois adicionará o novo "(1/3)".
+    const cleanDesc = desc.replace(/\s*\(\d+\/\d+\)$/, '');
+
     onRewrite(transaction, { 
-        description: desc, 
+        description: cleanDesc, // Envia a descrição limpa
         amount: finalAmount, 
         category: cat, 
-        date: date, 
+        date: finalDate, 
         paymentMethod, 
         cardId: paymentMethod === 'Cartão' ? selectedCard : null,
         installments: paymentMethod === 'Cartão' ? installments : 1
-    }, true);
+    }, !isStructuralChange);
+    
     onClose();
   };
 
@@ -476,7 +493,7 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
           
           <div className="space-y-4">
              <div>
-               <label className="text-[10px] font-bold text-gray-400 uppercase">Valor</label>
+               <label className="text-[10px] font-bold text-gray-400 uppercase">Valor da Parcela/Total</label>
                <input type="number" value={amount} onChange={e=>setAmount(e.target.value)} className={`w-full p-3 rounded-xl border font-bold text-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`} />
              </div>
              
@@ -489,8 +506,7 @@ const EditTransactionModal = ({ transaction, mode, onClose, onRewrite, onAnticip
                             <button onClick={()=>setPaymentMethod('Cartão')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${paymentMethod==='Cartão' ? 'bg-emerald-100 border-emerald-500 text-emerald-700' : 'border-gray-200 text-gray-400'}`}>Cartão</button>
                         </div>
                     </div>
-
-                    {/* AQUI ESTÁ A NOVIDADE: Seletores aparecem se for Cartão */}
+                    
                     {paymentMethod === 'Cartão' && (
                         <div className="flex gap-2 animate-in fade-in">
                             <div className="flex-1">
@@ -763,27 +779,54 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
   );
 };
 
-// --- PERFIL ---
+// --- COMPONENTE PERFIL (CORREÇÃO 3 - RENDA MENSAL COM SETINHA/EXPANSÍVEL) ---
 const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, onDeleteCategory, onLogout, monthlySavings, transactions, darkMode, onAddInitialBalance }: any) => {
+  // States de visibilidade (Adicionei showIncome)
+  const [showIncome, setShowIncome] = useState(false);
   const [showCats, setShowCats] = useState(false);
   const [showGoals, setShowGoals] = useState(false);
   const [showInvestments, setShowInvestments] = useState(false);
   const [isAddingBalance, setIsAddingBalance] = useState(false);
+  
+  // States para os inputs
   const [balanceAmount, setBalanceAmount] = useState('');
   const [balanceCategory, setBalanceCategory] = useState('');
   const [newCat, setNewCat] = useState('');
   const [newInvestCat, setNewInvestCat] = useState('');
-  const [isEditingIncome, setIsEditingIncome] = useState(false);
-  const [tempIncome, setTempIncome] = useState(settings.monthlyIncome.toString());
   const [newGoalName, setNewGoalName] = useState('');
   const [newGoalAmount, setNewGoalAmount] = useState('');
+  
+  // States Temporários para Edição
+  const [tempIncome, setTempIncome] = useState(settings.monthlyIncome);
+  const [tempLimits, setTempLimits] = useState(settings.categoryLimits || {});
+
+  useEffect(() => {
+      setTempIncome(settings.monthlyIncome);
+      setTempLimits(settings.categoryLimits || {});
+  }, [settings]);
 
   const investmentCats = settings.investmentCategories || DEFAULT_INVEST_CATS;
 
+  // SALVAR RENDA
   const handleSaveIncome = () => {
     onUpdateSettings({...settings, monthlyIncome: parseFloat(tempIncome)});
-    setIsEditingIncome(false);
+    alert("Renda atualizada com sucesso!");
+    setShowIncome(false); // Fecha após salvar
   };
+
+  // SALVAR LIMITE INDIVIDUAL
+  const handleSaveLimit = (cat: string) => {
+      const rawVal = tempLimits[cat];
+      const val = rawVal === '' ? 0 : parseFloat(rawVal);
+      const newLimits = { ...settings.categoryLimits, [cat]: isNaN(val) ? 0 : val };
+      onUpdateSettings({ ...settings, categoryLimits: newLimits });
+      alert(`Limite de ${cat} salvo com sucesso!`);
+  };
+
+  const handleLocalLimitChange = (cat: string, val: string) => {
+      setTempLimits({ ...tempLimits, [cat]: val });
+  };
+  
   const handleAddGoal = () => {
     if(!newGoalName || !newGoalAmount) return;
     const newGoal: Goal = { id: generateId(), name: newGoalName, amount: parseFloat(newGoalAmount) };
@@ -791,20 +834,24 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
     onUpdateSettings({ ...settings, goals: updatedGoals });
     setNewGoalName(''); setNewGoalAmount('');
   };
+  
   const handleDeleteGoal = (id: string) => {
     const updatedGoals = settings.goals.filter((g:Goal) => g.id !== id);
     onUpdateSettings({ ...settings, goals: updatedGoals });
   };
+  
   const handleAddInvestCat = () => {
       if(!newInvestCat) return;
       const currentList = settings.investmentCategories || DEFAULT_INVEST_CATS;
       onUpdateSettings({ ...settings, investmentCategories: [...currentList, newInvestCat] });
       setNewInvestCat('');
   };
+  
   const handleDeleteInvestCat = (c: string) => {
       const currentList = settings.investmentCategories || DEFAULT_INVEST_CATS;
       onUpdateSettings({ ...settings, investmentCategories: currentList.filter((x:string) => x !== c) });
   };
+  
   const confirmInitialBalance = () => {
       if (!balanceAmount || !balanceCategory) return alert("Preencha valor e categoria.");
       const amount = parseFloat(balanceAmount);
@@ -814,14 +861,13 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
       setBalanceCategory('');
       setIsAddingBalance(false);
   };
-  const updateCategoryLimit = (cat: string, limit: string) => {
-    const newLimits = { ...settings.categoryLimits, [cat]: parseFloat(limit) };
-    onUpdateSettings({ ...settings, categoryLimits: newLimits });
-  };
+
   const toggleDarkMode = () => {
     onUpdateSettings({ ...settings, darkMode: !settings.darkMode });
   };
+
   const totalGoals = settings.goals ? settings.goals.reduce((acc:number, g:Goal) => acc + g.amount, 0) : 0;
+  
   const investmentsSummary = useMemo(() => {
       const investTransactions = transactions.filter((t:any) => t.type === 'Investimento');
       const map = new Map();
@@ -835,6 +881,7 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
          <h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>Perfil</h2>
          <div onClick={toggleDarkMode} className={`p-2 rounded-full cursor-pointer transition-colors ${darkMode ? 'bg-gray-800 text-yellow-400' : 'bg-gray-100 text-gray-500'}`}>{darkMode ? <Sun size={20}/> : <Moon size={20}/>}</div>
       </div>
+      
       <div className={`rounded-3xl p-6 text-white shadow-lg relative overflow-hidden ${darkMode ? 'bg-emerald-900' : 'bg-emerald-500'}`}>
          <div className="absolute -right-4 -top-4 opacity-10"><DollarSign size={100}/></div>
          <div className="flex items-center gap-2 mb-2 opacity-90"><DollarSign size={16}/> <span className="text-xs font-bold uppercase tracking-wider">Economia Mensal</span></div>
@@ -842,15 +889,40 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
          <div className="h-1 bg-black/20 rounded-full w-full mb-1"><div className="bg-white h-full rounded-full" style={{width: `${Math.min((monthlySavings/settings.monthlyIncome)*100, 100)}%`}}></div></div>
          <p className="text-[10px] text-emerald-100 text-right">de {formatCurrency(settings.monthlyIncome)} (Renda)</p>
       </div>
+      
       <p className="text-xs font-bold text-gray-400 uppercase tracking-widest px-2 mt-4">Configurações</p>
       <div className="space-y-3">
-         <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-            {isEditingIncome ? (
-              <div className="flex gap-2 items-center"><input autoFocus type="number" value={tempIncome} onChange={e=>setTempIncome(e.target.value)} className={`w-full p-2 border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`} /><button onClick={handleSaveIncome} className="bg-emerald-600 text-white p-2 rounded-lg"><Check size={18}/></button></div>
-            ) : (
-              <div onClick={() => setIsEditingIncome(true)} className="flex items-center justify-between cursor-pointer"><div className="flex items-center gap-4"><div className={`p-3 rounded-full ${darkMode ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-50 text-blue-600'}`}><Wallet size={20}/></div><div><p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Renda Mensal</p><p className="text-xs text-gray-400">{formatCurrency(settings.monthlyIncome)}</p></div></div><Edit2 size={16} className="text-gray-300"/></div>
+         
+         {/* --- RENDA MENSAL (AGORA COM SETINHA) --- */}
+         <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+            <div onClick={() => setShowIncome(!showIncome)} className="p-4 flex items-center justify-between cursor-pointer">
+                <div className="flex items-center gap-4">
+                    <div className={`p-3 rounded-full ${darkMode ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-50 text-blue-600'}`}><Wallet size={20}/></div>
+                    <div>
+                        <p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Renda Mensal</p>
+                        <p className="text-xs text-gray-400">{formatCurrency(settings.monthlyIncome)}</p>
+                    </div>
+                </div>
+                <ChevronRight size={16} className={`text-gray-300 transition-transform ${showIncome ? 'rotate-90' : ''}`}/>
+            </div>
+            {showIncome && (
+                <div className={`px-4 pb-4 border-t animate-in slide-in-from-top-2 ${darkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50/50 border-gray-100'}`}>
+                    <div className="flex gap-2 mt-3">
+                        <input 
+                            type="number" 
+                            value={tempIncome} 
+                            onChange={e=>setTempIncome(e.target.value)} 
+                            className={`flex-1 p-3 border rounded-xl outline-none font-bold text-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'}`} 
+                        />
+                        <button onClick={handleSaveIncome} className="px-4 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors flex items-center justify-center">
+                            <Check size={24}/>
+                        </button>
+                    </div>
+                </div>
             )}
          </div>
+
+         {/* METAS */}
          <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
             <div onClick={() => setShowGoals(!showGoals)} className="p-4 flex items-center justify-between cursor-pointer"><div className="flex items-center gap-4"><div className={`p-3 rounded-full ${darkMode ? 'bg-amber-900/50 text-amber-400' : 'bg-amber-50 text-amber-600'}`}><Target size={20}/></div><div><p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Minhas Metas</p><p className="text-xs text-gray-400">Total: {formatCurrency(totalGoals)}</p></div></div><ChevronRight size={16} className={`text-gray-300 transition-transform ${showGoals ? 'rotate-90' : ''}`}/></div>
             {showGoals && (
@@ -860,6 +932,8 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
                 </div>
             )}
          </div>
+
+         {/* INVESTIMENTOS */}
          <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
             <div onClick={() => setShowInvestments(!showInvestments)} className="p-4 flex items-center justify-between cursor-pointer"><div className="flex items-center gap-4"><div className={`p-3 rounded-full ${darkMode ? 'bg-indigo-900/50 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><TrendingUp size={20}/></div><div><p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Meus Investimentos</p><p className="text-xs text-gray-400">Gerenciar Categorias</p></div></div><ChevronRight size={16} className={`text-gray-300 transition-transform ${showInvestments ? 'rotate-90' : ''}`}/></div>
             {showInvestments && (
@@ -874,10 +948,35 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
                 </div>
             )}
          </div>
+
+         {/* LIMITES */}
          <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
              <div onClick={() => setShowCats(!showCats)} className="p-4 flex items-center justify-between cursor-pointer"><div className="flex items-center gap-4"><div className={`p-3 rounded-full ${darkMode ? 'bg-rose-900/50 text-rose-400' : 'bg-rose-50 text-rose-600'}`}><AlertCircle size={20}/></div><div><p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Limites de Despesas</p><p className="text-xs text-gray-400">{categories.length} categorias</p></div></div><ChevronRight size={16} className={`text-gray-300 transition-transform ${showCats ? 'rotate-90' : ''}`}/></div>
              {showCats && (
-               <div className={`px-4 pb-4 border-t animate-in slide-in-from-top-2 ${darkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50/50 border-gray-100'}`}><div className="flex gap-2 mb-3 mt-3"><input value={newCat} onChange={e=>setNewCat(e.target.value)} placeholder="Nova categoria..." className={`flex-1 p-2 rounded-lg border text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white'}`}/><button onClick={() => { if(newCat) { onAddCategory(newCat); setNewCat(''); }}} className="bg-emerald-600 text-white p-2 rounded-lg"><Plus size={18}/></button></div><div className="space-y-2 max-h-60 overflow-y-auto pr-1">{categories.map((c:string) => (<div key={c} className={`flex justify-between items-center text-sm p-3 rounded-lg border shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}><span className={`font-bold ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>{c}</span><div className="flex items-center gap-2"><span className="text-[10px] text-gray-400 uppercase font-bold">Limite:</span><input type="number" placeholder="R$ 0" className={`w-20 p-1 border rounded text-right text-xs ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`} value={settings.categoryLimits?.[c] || ''} onChange={(e) => updateCategoryLimit(c, e.target.value)} /><button onClick={() => onDeleteCategory(c)} className="text-gray-300 hover:text-rose-500 ml-1"><Trash2 size={14}/></button></div></div>))}</div></div>
+               <div className={`px-4 pb-4 border-t animate-in slide-in-from-top-2 ${darkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50/50 border-gray-100'}`}>
+                   <div className="flex gap-2 mb-3 mt-3"><input value={newCat} onChange={e=>setNewCat(e.target.value)} placeholder="Nova categoria..." className={`flex-1 p-2 rounded-lg border text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white'}`}/><button onClick={() => { if(newCat) { onAddCategory(newCat); setNewCat(''); }}} className="bg-emerald-600 text-white p-2 rounded-lg"><Plus size={18}/></button></div>
+                   <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                       {categories.map((c:string) => (
+                           <div key={c} className={`flex justify-between items-center text-sm p-3 rounded-lg border shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+                               <span className={`font-bold ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>{c}</span>
+                               <div className="flex items-center gap-2">
+                                   <span className="text-[10px] text-gray-400 uppercase font-bold">Limite:</span>
+                                   <input 
+                                        type="number" 
+                                        placeholder="0" 
+                                        className={`w-20 p-1 border rounded text-right text-xs ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`} 
+                                        value={tempLimits[c] !== undefined ? tempLimits[c] : (settings.categoryLimits?.[c] || '')} 
+                                        onChange={(e) => handleLocalLimitChange(c, e.target.value)} 
+                                   />
+                                   <button onClick={() => handleSaveLimit(c)} className="text-white bg-emerald-500 hover:bg-emerald-600 p-1.5 rounded-md transition-colors">
+                                        <Check size={14}/>
+                                   </button>
+                                   <button onClick={() => onDeleteCategory(c)} className="text-gray-300 hover:text-rose-500 ml-1"><Trash2 size={14}/></button>
+                               </div>
+                           </div>
+                       ))}
+                   </div>
+               </div>
              )}
          </div>
       </div>
@@ -1003,7 +1102,7 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
   );
 };
 
-// --- 4. APP PRINCIPAL ---
+// --- 4. APP PRINCIPAL (CORREÇÃO 4: CABEÇALHO COM SELETOR DE ANO/MÊS) ---
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [rawTransactions, setRawTransactions] = useState<Transaction[]>([]);
@@ -1012,16 +1111,21 @@ export default function App() {
   const [settings, setSettings] = useState<UserSettings>({ monthlyIncome: 5000, goals: [], darkMode: false, categoryLimits: {} });
   const [screen, setScreen] = useState<AppScreen>(AppScreen.Home);
   const [loading, setLoading] = useState(true);
+  
+  // --- STATES DE DATA E SELETOR ---
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false); // Controla o modal
+  const [pickerYear, setPickerYear] = useState(new Date().getFullYear()); // Ano temporário
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [editingTransaction, setEditingTransaction] = useState<{data: Transaction, mode: 'home'|'reports'|'cards'} | null>(null);
 
-  const monthsRef = useRef<HTMLDivElement>(null);
-
   const selectedMonthKey = getMonthKey(currentDate);
-  const currentYear = currentDate.getFullYear();
-  const currentMonthIdx = currentDate.getMonth();
+  
+  // Formatador de título
+  const headerTitle = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(currentDate);
+  const displayTitle = headerTitle.charAt(0).toUpperCase() + headerTitle.slice(1);
 
   useEffect(() => {
     let meta = document.querySelector('meta[name="viewport"]');
@@ -1055,7 +1159,6 @@ export default function App() {
   const monthDetails = useMemo(() => {
     let inc = 0, exp = 0;
     filteredTransactions.forEach(t => {
-        // CORREÇÃO: Ignora "Saldo Inicial" no fluxo de caixa (saldo da conta)
         if (t.category === 'Saldo Inicial' || t.description.includes('Saldo Inicial')) return;
         if(t.type === 'Entrada') inc += t.amount;
         else exp += t.amount;
@@ -1063,14 +1166,7 @@ export default function App() {
     return { income: inc, expenses: exp, balance: inc - exp };
   }, [filteredTransactions]);
 
-  useEffect(() => {
-    if (monthsRef.current) {
-        const scrollPos = (currentMonthIdx * 70) - (window.innerWidth / 2) + 35;
-        monthsRef.current.scrollTo({ left: scrollPos, behavior: 'smooth' });
-    }
-  }, [currentMonthIdx, screen]);
-
-  const handleLogin = async (e:any) => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, email, password); } catch(e) { alert("Erro ao entrar."); } };
+  const handleLogin = async (e:any) => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, email, password); } catch(e) { alert("Erro ao entrar. Verifique e-mail e senha."); } };
   
   const addTransactions = async (newTrans: Transaction[]) => {
     if(!user) return;
@@ -1079,35 +1175,64 @@ export default function App() {
     await batch.commit();
     setScreen(AppScreen.Home);
   };
+
   const transferBalance = async (balance: number) => {
       if(!user) return;
       if(balance <= 0) return alert("Não há saldo positivo para transferir.");
       const batch = writeBatch(db);
       const transferId = generateId();
-      const lastDayCurrent = new Date(currentYear, currentMonthIdx + 1, 0); 
+      const lastDayCurrent = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0); 
       const t1Id = generateId();
       batch.set(doc(db, `users/${user.uid}/transactions`, t1Id), { id: t1Id, description: 'Transferência para Mês Seguinte', amount: balance, type: 'Saída', category: 'Transferência', date: lastDayCurrent.toISOString().split('T')[0], month: selectedMonthKey, paymentMethod: 'Dinheiro', transferId });
-      const firstDayNext = new Date(currentYear, currentMonthIdx + 1, 1);
+      const firstDayNext = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
       const t2Id = generateId();
       batch.set(doc(db, `users/${user.uid}/transactions`, t2Id), { id: t2Id, description: 'Sobra do Mês Anterior', amount: balance, type: 'Entrada', category: 'Saldo Anterior', date: firstDayNext.toISOString().split('T')[0], month: getMonthKey(firstDayNext), paymentMethod: 'Dinheiro', transferId });
       await batch.commit();
       alert("Saldo transferido com sucesso!");
   };
+
   const rewriteTransaction = async (oldT: Transaction, newData: any, isSimpleUpdate = false) => {
      if(!user) return;
      const batch = writeBatch(db);
      if (isSimpleUpdate) { batch.update(doc(db, `users/${user.uid}/transactions`, oldT.id), newData); await batch.commit(); return; }
-     if (oldT.transferId) { const pair = rawTransactions.filter(t => t.transferId === oldT.transferId); pair.forEach(p => batch.delete(doc(db, `users/${user.uid}/transactions`, p.id))); } else if (oldT.parentId) { const siblings = rawTransactions.filter(rt => rt.parentId === oldT.parentId); siblings.forEach(s => batch.delete(doc(db, `users/${user.uid}/transactions`, s.id))); } else { batch.delete(doc(db, `users/${user.uid}/transactions`, oldT.id)); }
+     
+     if (oldT.transferId) { 
+         const pair = rawTransactions.filter(t => t.transferId === oldT.transferId); 
+         pair.forEach(p => batch.delete(doc(db, `users/${user.uid}/transactions`, p.id))); 
+     } else if (oldT.parentId) { 
+         const siblings = rawTransactions.filter(rt => rt.parentId === oldT.parentId); 
+         siblings.forEach(s => batch.delete(doc(db, `users/${user.uid}/transactions`, s.id))); 
+     } else { 
+         batch.delete(doc(db, `users/${user.uid}/transactions`, oldT.id)); 
+     }
+
      if (newData.paymentMethod === 'Cartão' && newData.installments > 1) {
         const parentId = generateId();
         const baseDate = new Date(newData.date);
-        for(let i = 0; i < newData.installments; i++) { const currentInstDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, baseDate.getDate() + 1); const newId = generateId(); batch.set(doc(db, `users/${user.uid}/transactions`, newId), { id: newId, description: `${newData.description} (${i+1}/${newData.installments})`, amount: newData.amount / newData.installments, type: oldT.type, category: newData.category, date: currentInstDate.toISOString().split('T')[0], month: currentInstDate.toISOString().slice(0, 7), paymentMethod: 'Cartão', cardId: newData.cardId, installment: { current: i+1, total: newData.installments }, parentId }); }
+        for(let i = 0; i < newData.installments; i++) { 
+            const currentInstDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, baseDate.getDate() + 1); 
+            const newId = generateId(); 
+            batch.set(doc(db, `users/${user.uid}/transactions`, newId), { 
+                id: newId, 
+                description: `${newData.description} (${i+1}/${newData.installments})`, 
+                amount: newData.amount / newData.installments, 
+                type: oldT.type, 
+                category: newData.category, 
+                date: currentInstDate.toISOString().split('T')[0], 
+                month: currentInstDate.toISOString().slice(0, 7), 
+                paymentMethod: 'Cartão', 
+                cardId: newData.cardId, 
+                installment: { current: i+1, total: newData.installments }, 
+                parentId 
+            }); 
+        }
      } else {
         const newId = generateId();
         batch.set(doc(db, `users/${user.uid}/transactions`, newId), { id: newId, description: newData.description, amount: newData.amount, type: oldT.type, category: newData.category, date: newData.date, month: newData.date.slice(0, 7), paymentMethod: 'Dinheiro', cardId: null });
      }
      await batch.commit();
   };
+
   const anticipateTransaction = async (t: Transaction) => {
       if(!user || !t.parentId || !t.installment) return;
       const batch = writeBatch(db);
@@ -1120,12 +1245,14 @@ export default function App() {
       batch.set(doc(db, `users/${user.uid}/transactions`, newId), { id: newId, description: `${t.description.split('(')[0]} (Antecipação)`, amount: totalRemaining, type: 'Saída', category: t.category, date: today, month: today.slice(0, 7), paymentMethod: 'Dinheiro', cardId: t.cardId });
       await batch.commit();
   };
+
   const deleteTransaction = async (t: Transaction) => {
     if(!user) return;
     const batch = writeBatch(db);
     if (t.transferId) { const pair = rawTransactions.filter(tr => tr.transferId === t.transferId); pair.forEach(p => batch.delete(doc(db, `users/${user.uid}/transactions`, p.id))); } else if (t.installment && t.parentId) { const allInstallments = rawTransactions.filter(rt => rt.parentId === t.parentId); allInstallments.forEach(inst => { batch.delete(doc(db, `users/${user.uid}/transactions`, inst.id)); }); } else { batch.delete(doc(db, `users/${user.uid}/transactions`, t.id)); }
     await batch.commit();
   };
+
   const addInitialBalance = async (amount: number, category: string) => {
       if(!user) return;
       const id = generateId();
@@ -1133,13 +1260,29 @@ export default function App() {
       const newTrans: Transaction = { id, description: 'Saldo Inicial / Ajuste Manual', amount, type: 'Investimento', category: category, date: today, month: today.slice(0, 7), paymentMethod: 'Dinheiro' };
       await setDoc(doc(db, `users/${user.uid}/transactions`, id), newTrans);
   };
+
   const updateSettings = async (newSettings: UserSettings) => { if(!user) return; setSettings(newSettings); await setDoc(doc(db, `users/${user.uid}/settings`, 'config'), { userSettings: newSettings }, { merge: true }); };
   const updateCategories = async (newCats: string[]) => { if(!user) return; setCategories(newCats); await setDoc(doc(db, `users/${user.uid}/settings`, 'config'), { categories: newCats }, { merge: true }); };
   const saveCard = async (updatedCard: CardData) => { if(!user) return; const exists = cards.find(c => c.id === updatedCard.id); const newList = exists ? cards.map(c => c.id === updatedCard.id ? updatedCard : c) : [...cards, updatedCard]; setCards(newList); await setDoc(doc(db, `users/${user.uid}/settings`, 'cards'), { list: newList }, { merge: true }); };
   const deleteCard = async (cardId: string) => { if(!user) return; const newList = cards.filter(c => c.id !== cardId); setCards(newList); await setDoc(doc(db, `users/${user.uid}/settings`, 'cards'), { list: newList }, { merge: true }); };
 
-  const changeMonth = (idx: number) => setCurrentDate(new Date(currentYear, idx, 1));
-  const changeYear = (dir: number) => { const newYear = currentYear + dir; const newMonth = dir > 0 ? 0 : 11; setCurrentDate(new Date(newYear, newMonth, 1)); };
+  // NAVEGAÇÃO DE MÊS SIMPLES
+  const navigateMonth = (direction: number) => {
+      const newDate = new Date(currentDate);
+      newDate.setMonth(currentDate.getMonth() + direction);
+      setCurrentDate(newDate);
+  };
+
+  // --- FUNÇÕES DO SELETOR DE DATA ---
+  const openDatePicker = () => {
+      setPickerYear(currentDate.getFullYear());
+      setShowDatePicker(true);
+  }
+  const selectDate = (monthIdx: number) => {
+      const newDate = new Date(pickerYear, monthIdx, 1);
+      setCurrentDate(newDate);
+      setShowDatePicker(false);
+  }
 
   if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-emerald-500"/></div>;
 
@@ -1153,22 +1296,73 @@ export default function App() {
 
   return (
     <div className={`h-screen w-screen flex flex-col overflow-hidden relative font-sans transition-colors duration-300 ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
+      
+      {/* --- CABEÇALHO COM SELETOR DE ANO/MÊS --- */}
       {screen !== AppScreen.Add && (
-        <div className={`pt-10 pb-2 shadow-sm z-10 rounded-b-[32px] ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
-           <div className="flex items-center justify-center gap-6 mb-4"><button onClick={() => changeYear(-1)} className={`p-2 hover:text-emerald-500 ${isDark ? 'text-gray-400' : 'text-gray-400'}`}><ChevronLeft size={20}/></button><h2 className={`text-xl font-bold ${isDark ? 'text-white' : 'text-gray-800'}`}>{currentYear}</h2><button onClick={() => changeYear(1)} className={`p-2 hover:text-emerald-500 ${isDark ? 'text-gray-400' : 'text-gray-400'}`}><ChevronRight size={20}/></button></div>
-           <div ref={monthsRef} className="flex overflow-x-auto px-6 gap-3 pb-4 scrollbar-hide">{MONTHS.map((m, idx) => (<button key={m} onClick={() => changeMonth(idx)} className={`px-5 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap ${idx === currentMonthIdx ? (isDark ? 'bg-emerald-600 text-white shadow-none' : 'bg-emerald-600 text-white shadow-md shadow-emerald-100/50') : (isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-50 text-gray-400 hover:bg-gray-100')}`}>{m}</button>))}</div>
+        <div className={`pt-8 pb-4 px-6 flex justify-between items-center z-10 shadow-sm rounded-b-[32px] transition-colors ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
+           <button onClick={() => navigateMonth(-1)} className={`p-2 rounded-full transition-colors ${isDark ? 'hover:bg-gray-700 text-white' : 'hover:bg-gray-100 text-gray-600'}`}>
+              <ChevronLeft size={24}/>
+           </button>
+           
+           {/* TÍTULO CLICÁVEL */}
+           <div onClick={openDatePicker} className={`flex items-center gap-2 cursor-pointer px-4 py-2 rounded-xl transition-all active:scale-95 ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-50'}`}>
+               <h2 className={`text-lg font-bold capitalize select-none ${isDark ? 'text-white' : 'text-gray-800'}`}>
+                  {displayTitle}
+               </h2>
+               <ChevronDown size={16} className={isDark ? 'text-gray-400' : 'text-gray-400'}/>
+           </div>
+
+           <button onClick={() => navigateMonth(1)} className={`p-2 rounded-full transition-colors ${isDark ? 'hover:bg-gray-700 text-white' : 'hover:bg-gray-100 text-gray-600'}`}>
+              <ChevronRight size={24}/>
+           </button>
         </div>
       )}
+
+      {/* --- MODAL DO SELETOR DE DATA --- */}
+      {showDatePicker && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setShowDatePicker(false)}>
+              <div className={`w-72 p-4 rounded-2xl shadow-2xl scale-100 animate-in zoom-in-95 ${isDark ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`} onClick={e => e.stopPropagation()}>
+                  
+                  {/* Navegação de ANO */}
+                  <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100 dark:border-gray-700">
+                      <button onClick={() => setPickerYear(pickerYear - 1)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full"><ChevronLeft size={20}/></button>
+                      <span className="font-bold text-lg">{pickerYear}</span>
+                      <button onClick={() => setPickerYear(pickerYear + 1)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full"><ChevronRight size={20}/></button>
+                  </div>
+
+                  {/* Grade de MESES */}
+                  <div className="grid grid-cols-3 gap-2">
+                      {MONTHS.map((m, idx) => (
+                          <button 
+                            key={m} 
+                            onClick={() => selectDate(idx)}
+                            className={`py-3 rounded-xl text-sm font-bold transition-colors ${
+                                idx === currentDate.getMonth() && pickerYear === currentDate.getFullYear()
+                                ? 'bg-emerald-500 text-white shadow-lg'
+                                : (isDark ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-50 hover:bg-gray-100')
+                            }`}
+                          >
+                              {m}
+                          </button>
+                      ))}
+                  </div>
+              </div>
+          </div>
+      )}
+
       <div className="flex-1 overflow-y-auto pt-4 scrollbar-hide">
         {screen === AppScreen.Home && <Home transactions={filteredTransactions} monthDetails={monthDetails} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'home'})} onTransferBalance={transferBalance} darkMode={isDark} />}
         {screen === AppScreen.Reports && <Reports transactions={filteredTransactions} categories={categories} settings={settings} darkMode={isDark} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'reports'})} />}
         {screen === AppScreen.Cards && <CardsScreen cards={cards} transactions={rawTransactions} currentMonthKey={selectedMonthKey} onSaveCard={saveCard} onDeleteCard={deleteCard} darkMode={isDark} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'cards'})} />}
         {screen === AppScreen.Profile && <Profile user={user} categories={categories} settings={settings} transactions={rawTransactions} onUpdateSettings={updateSettings} onAddCategory={(c:string)=>updateCategories([...categories,c])} onDeleteCategory={(c:string)=>updateCategories(categories.filter(x=>x!==c))} onLogout={()=>signOut(auth)} monthlySavings={monthDetails.balance} darkMode={isDark} onAddInitialBalance={addInitialBalance} />}
       </div>
+      
       {screen !== AppScreen.Add && (
         <div className={`fixed bottom-0 w-full border-t p-2 pb-6 flex justify-between items-center px-8 z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-100'}`}><button onClick={() => setScreen(AppScreen.Home)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Home ? 'text-emerald-500' : 'text-gray-400'}`}><LayoutDashboard size={24} strokeWidth={screen===AppScreen.Home?2.5:2} /><span className="text-[10px] font-bold">Início</span></button><button onClick={() => setScreen(AppScreen.Cards)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Cards ? 'text-emerald-500' : 'text-gray-400'}`}><CreditCard size={24} strokeWidth={screen===AppScreen.Cards?2.5:2} /><span className="text-[10px] font-bold">Cartões</span></button><div className="relative -top-8"><button onClick={() => setScreen(AppScreen.Add)} className={`w-14 h-14 rounded-full shadow-xl flex items-center justify-center hover:scale-105 transition-transform ${isDark ? 'bg-emerald-600 text-white shadow-none' : 'bg-emerald-600 text-white shadow-emerald-100/50'}`}><Plus size={32}/></button></div><button onClick={() => setScreen(AppScreen.Reports)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Reports ? 'text-emerald-500' : 'text-gray-400'}`}><PieChartIcon size={24} strokeWidth={screen===AppScreen.Reports?2.5:2} /><span className="text-[10px] font-bold">Relatórios</span></button><button onClick={() => setScreen(AppScreen.Profile)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Profile ? 'text-emerald-500' : 'text-gray-400'}`}><UserIcon size={24} strokeWidth={screen===AppScreen.Profile?2.5:2} /><span className="text-[10px] font-bold">Perfil</span></button></div>
       )}
+      
       {screen === AppScreen.Add && <AddTransaction categories={categories} cards={cards} settings={settings} monthDetails={monthDetails} onSave={addTransactions} onCancel={() => setScreen(AppScreen.Home)} darkMode={isDark} />}
+      
       {editingTransaction && (<EditTransactionModal transaction={editingTransaction.data} mode={editingTransaction.mode} categories={categories} settings={settings} cards={cards} darkMode={isDark} onClose={() => setEditingTransaction(null)} onRewrite={rewriteTransaction} onAnticipate={anticipateTransaction} onDelete={deleteTransaction} />)}
     </div>
   );
