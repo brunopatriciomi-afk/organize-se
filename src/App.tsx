@@ -7,12 +7,21 @@ import {
   Plus, ChevronLeft, ChevronRight, ChevronDown, Wallet, ArrowUpCircle, ArrowDownCircle, 
   Trash2, Edit2, X, Loader2, LogIn, LogOut, Filter, Settings, Target, DollarSign, AlertCircle, Check, AlertTriangle, Moon, Sun, List, Zap, TrendingUp, ArrowRightCircle
 } from 'lucide-react';
+
+// --- CORREÇÃO 1: IMPORTS DO FIRESTORE ---
+// Adicionei getDoc e updateDoc para verificar as chaves de licença
 import { 
-  collection, doc, setDoc, deleteDoc, onSnapshot, query, writeBatch, where, getDocs 
+  collection, doc, setDoc, deleteDoc, onSnapshot, query, writeBatch, where, getDocs,
+  getDoc, updateDoc 
 } from 'firebase/firestore';
+
+// --- CORREÇÃO 2: IMPORTS DO AUTH ---
+// Adicionei createUserWithEmailAndPassword para criar a conta após validar a chave
 import { 
-  signInWithEmailAndPassword, onAuthStateChanged, signOut, type User 
+  signInWithEmailAndPassword, onAuthStateChanged, signOut, type User,
+  createUserWithEmailAndPassword
 } from 'firebase/auth';
+
 import { db, auth } from './firebaseConfig';
 
 // --- 1. TIPOS ---
@@ -55,15 +64,14 @@ export interface Transaction {
   transferId?: string;
 }
 
-// Categorias Padrão
+// Categorias Padrão (Genéricas)
 const DEFAULT_EXPENSE_CATS = ['Alimentação', 'Moradia', 'Transporte', 'Lazer', 'Saúde', 'Educação', 'Compras', 'Serviços', 'Assinaturas'];
 const DEFAULT_INCOME_CATS = ['Salário', 'Bônus', 'Dinheiro Extra', 'Reembolso'];
 const DEFAULT_INVEST_CATS = ['Reserva', 'Casa', 'Carro', 'Aposentadoria'];
 
-const INITIAL_CARDS: CardData[] = [
-  { id: 'card_nubank', name: 'Nubank', holder: 'Bruno', limit: 5000, closingDay: 1, dueDay: 8, color: 'border-l-purple-600' },
-  { id: 'card_inter', name: 'Inter', holder: 'Carla', limit: 3000, closingDay: 10, dueDay: 17, color: 'border-l-orange-500' },
-];
+// --- CORREÇÃO 3: DADOS DE EXEMPLO LIMPOS ---
+// Garante que não tem cartão do "Bruno" aqui
+const INITIAL_CARDS: CardData[] = [];
 
 const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const MONTHS_FULL = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
@@ -93,7 +101,6 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, onTransferBalan
         <div className="absolute top-0 right-0 p-4 opacity-10"><Wallet size={120} /></div>
         <p className="text-emerald-100 font-medium mb-1 text-sm">Saldo em Conta</p>
         
-        {/* CORREÇÃO APLICADA: Se o saldo for negativo (< 0), usa a cor rose-300 (vermelho claro), senão usa a cor padrão */}
         <h1 className={`text-4xl font-bold mb-8 ${monthDetails.balance < 0 ? 'text-rose-300' : 'text-white'}`}>
             {formatCurrency(monthDetails.balance)}
         </h1>
@@ -171,7 +178,8 @@ const Home = ({ transactions, monthDetails, onSelectTransaction, onTransferBalan
     </div>
   );
 };
-// --- TELA: RELATÓRIOS (CORRIGIDA - SALDO INICIAL E PORCENTAGEM) ---
+
+// --- TELA: RELATÓRIOS ---
 const Reports = ({ transactions, categories, settings, darkMode, onSelectTransaction }: any) => {
   const [filterType, setFilterType] = useState<'Tudo' | 'Saída' | 'Entrada' | 'Investimento'>('Tudo');
   const [filterCat, setFilterCat] = useState('Todas');
@@ -1114,31 +1122,39 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
     </div>
   );
 };
-// --- 4. APP PRINCIPAL (CORREÇÃO 4: CABEÇALHO COM SELETOR DE ANO/MÊS) ---
+// --- 4. APP PRINCIPAL (VERSÃO FINAL: ORULLA + LICENÇAS + DATA PICKER) ---
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [rawTransactions, setRawTransactions] = useState<Transaction[]>([]);
-  const [cards, setCards] = useState<CardData[]>(INITIAL_CARDS);
+  
+  // Cartões começam vazios (depende do INITIAL_CARDS que definimos antes)
+  const [cards, setCards] = useState<CardData[]>(INITIAL_CARDS); 
   const [categories, setCategories] = useState<string[]>(DEFAULT_EXPENSE_CATS);
-  const [settings, setSettings] = useState<UserSettings>({ monthlyIncome: 5000, goals: [], darkMode: false, categoryLimits: {} });
+  
+  // CORREÇÃO: Renda inicial 0 para o usuário configurar
+  const [settings, setSettings] = useState<UserSettings>({ monthlyIncome: 0, goals: [], darkMode: false, categoryLimits: {} });
+  
   const [screen, setScreen] = useState<AppScreen>(AppScreen.Home);
   const [loading, setLoading] = useState(true);
   
   // --- STATES DE DATA E SELETOR ---
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false); // Controla o modal
-  const [pickerYear, setPickerYear] = useState(new Date().getFullYear()); // Ano temporário
+  const [showDatePicker, setShowDatePicker] = useState(false); 
+  const [pickerYear, setPickerYear] = useState(new Date().getFullYear()); 
 
+  // --- LOGIN E CADASTRO ---
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false); // Alternar entre Login/Cadastro
+  const [accessCode, setAccessCode] = useState(''); // O Código da licença
+
   const [editingTransaction, setEditingTransaction] = useState<{data: Transaction, mode: 'home'|'reports'|'cards'} | null>(null);
 
   const selectedMonthKey = getMonthKey(currentDate);
-  
-  // Formatador de título
   const headerTitle = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(currentDate);
   const displayTitle = headerTitle.charAt(0).toUpperCase() + headerTitle.slice(1);
 
+  // Configuração Mobile
   useEffect(() => {
     let meta = document.querySelector('meta[name="viewport"]');
     if (!meta) {
@@ -1151,6 +1167,7 @@ export default function App() {
     document.body.style.overscrollBehaviorY = 'none';
   }, []);
 
+  // Carregar dados do Firebase
   useEffect(() => {
     return onAuthStateChanged(auth, (u) => {
       setUser(u); setLoading(false);
@@ -1178,7 +1195,62 @@ export default function App() {
     return { income: inc, expenses: exp, balance: inc - exp };
   }, [filteredTransactions]);
 
-  const handleLogin = async (e:any) => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, email, password); } catch(e) { alert("Erro ao entrar. Verifique e-mail e senha."); } };
+  // --- NOVA LÓGICA DE AUTENTICAÇÃO (COM VERIFICAÇÃO DE CHAVE) ---
+  const handleAuth = async (e: any) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      if (isRegistering) {
+        // 1. Validar input
+        const codeInput = accessCode.trim().toUpperCase();
+        if (!codeInput) {
+            alert("Por favor, digite seu código de acesso (enviado por e-mail).");
+            setLoading(false); return;
+        }
+
+        // 2. Buscar a chave no Banco de Dados (Coleção 'invites')
+        const inviteRef = doc(db, "invites", codeInput);
+        const inviteSnap = await getDoc(inviteRef);
+
+        // 3. Verificar validade
+        if (!inviteSnap.exists()) {
+            alert("Código de acesso inválido. Verifique se digitou corretamente.");
+            setLoading(false); return;
+        }
+        const inviteData = inviteSnap.data();
+        if (inviteData.used) {
+            alert("Este código de acesso já foi utilizado.");
+            setLoading(false); return;
+        }
+
+        // 4. Criar Usuário
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const newUser = userCredential.user;
+
+        // 5. "Queimar" a chave (Marcar como usada)
+        await updateDoc(inviteRef, {
+            used: true,
+            usedBy: email,
+            usedAt: new Date().toISOString(),
+            uid: newUser.uid
+        });
+
+        alert("Bem-vindo ao Orulla! Cadastro realizado com sucesso.");
+      } else {
+        // Login normal
+        await signInWithEmailAndPassword(auth, email, password);
+      }
+    } catch (e: any) {
+      console.error(e);
+      let msg = "Erro ao entrar.";
+      if (e.code === 'auth/email-already-in-use') msg = "Este e-mail já possui cadastro.";
+      if (e.code === 'auth/weak-password') msg = "A senha é muito fraca (mínimo 6 dígitos).";
+      if (e.code === 'auth/invalid-credential') msg = "E-mail ou senha incorretos.";
+      alert(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
   
   const addTransactions = async (newTrans: Transaction[]) => {
     if(!user) return;
@@ -1278,29 +1350,73 @@ export default function App() {
   const saveCard = async (updatedCard: CardData) => { if(!user) return; const exists = cards.find(c => c.id === updatedCard.id); const newList = exists ? cards.map(c => c.id === updatedCard.id ? updatedCard : c) : [...cards, updatedCard]; setCards(newList); await setDoc(doc(db, `users/${user.uid}/settings`, 'cards'), { list: newList }, { merge: true }); };
   const deleteCard = async (cardId: string) => { if(!user) return; const newList = cards.filter(c => c.id !== cardId); setCards(newList); await setDoc(doc(db, `users/${user.uid}/settings`, 'cards'), { list: newList }, { merge: true }); };
 
-  // NAVEGAÇÃO DE MÊS SIMPLES
   const navigateMonth = (direction: number) => {
       const newDate = new Date(currentDate);
       newDate.setMonth(currentDate.getMonth() + direction);
       setCurrentDate(newDate);
   };
 
-  // --- FUNÇÕES DO SELETOR DE DATA ---
-  const openDatePicker = () => {
-      setPickerYear(currentDate.getFullYear());
-      setShowDatePicker(true);
-  }
-  const selectDate = (monthIdx: number) => {
-      const newDate = new Date(pickerYear, monthIdx, 1);
-      setCurrentDate(newDate);
-      setShowDatePicker(false);
-  }
+  const openDatePicker = () => { setPickerYear(currentDate.getFullYear()); setShowDatePicker(true); }
+  const selectDate = (monthIdx: number) => { const newDate = new Date(pickerYear, monthIdx, 1); setCurrentDate(newDate); setShowDatePicker(false); }
 
   if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-emerald-500"/></div>;
 
+  // --- TELA DE LOGIN / CADASTRO (ORULLA) ---
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-gray-50 font-sans"><div className="w-full max-w-sm bg-white p-8 rounded-[32px] shadow-xl border border-gray-100"><div className="flex justify-center mb-8"><div className="bg-emerald-50 p-4 rounded-full"><LogIn size={32} className="text-emerald-600" /></div></div><h1 className="text-2xl font-bold text-center text-gray-900 mb-2">Finanças Casal</h1><p className="text-center text-gray-500 text-xs mb-8 uppercase tracking-wide">Acesse sua conta</p><form onSubmit={handleLogin} className="space-y-4"><div><label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Email</label><input type="email" className="w-full p-3 bg-gray-50 rounded-xl outline-none border border-gray-100 focus:border-emerald-500" value={email} onChange={e=>setEmail(e.target.value)} /></div><div><label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Senha</label><input type="password" className="w-full p-3 bg-gray-50 rounded-xl outline-none border border-gray-100 focus:border-emerald-500" value={password} onChange={e=>setPassword(e.target.value)} /></div><button type="submit" className="w-full bg-emerald-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-emerald-700 transition-all mt-4">Entrar</button></form></div></div>
+      <div className="min-h-screen flex items-center justify-center p-4 bg-gray-50 font-sans">
+        <div className="w-full max-w-sm bg-white p-8 rounded-[32px] shadow-xl border border-gray-100 animate-in fade-in zoom-in-95 duration-300">
+          
+          {/* LOGO E MARCA ORULLA */}
+          <div className="flex flex-col items-center justify-center mb-8 animate-in fade-in slide-in-from-top-4 duration-700">
+            <div className="mb-4 relative">
+                <div className="absolute inset-0 bg-emerald-200 blur-xl opacity-50 rounded-full"></div>
+                {/* ÍCONE ORULLA VERDE ESMERALDA */}
+                <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" className="relative z-10 shadow-lg rounded-2xl">
+                <rect width="64" height="64" rx="16" fill="#059669" />
+                <circle cx="32" cy="32" r="12" stroke="white" strokeWidth="4" />
+                <path d="M32 10V20" stroke="white" strokeWidth="4" strokeLinecap="round" />
+                <path d="M32 44V54" stroke="white" strokeWidth="4" strokeLinecap="round" />
+                <path d="M10 32H20" stroke="white" strokeWidth="4" strokeLinecap="round" />
+                <path d="M44 32H54" stroke="white" strokeWidth="4" strokeLinecap="round" />
+                <circle cx="32" cy="32" r="4" fill="white" />
+                </svg>
+            </div>
+            <h1 className="text-4xl font-extrabold text-center text-gray-900 tracking-tight">Orulla</h1>
+            <p className={`text-center ${isRegistering ? 'text-emerald-600 font-bold' : 'text-gray-400'} text-sm mt-2 uppercase tracking-wider`}>
+                {isRegistering ? 'Comece seu planejamento hoje' : 'Organize gastos e planeje metas'}
+            </p>
+          </div>
+          
+          <form onSubmit={handleAuth} className="space-y-4">
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Email</label>
+              <input type="email" required className="w-full p-3 bg-gray-50 rounded-xl outline-none border border-gray-100 focus:border-emerald-500 transition-colors" value={email} onChange={e=>setEmail(e.target.value)} placeholder="seu@email.com" />
+            </div>
+            
+            {/* CAMPO DE CÓDIGO DE ACESSO (SÓ NO CADASTRO) */}
+            {isRegistering && (
+                <div className="animate-in slide-in-from-top-2">
+                  <label className="text-[10px] font-bold text-emerald-600 uppercase mb-1 block">Código de Convite</label>
+                  <input type="text" required className="w-full p-3 bg-emerald-50 rounded-xl outline-none border border-emerald-100 focus:border-emerald-500 transition-colors font-bold text-emerald-800" value={accessCode} onChange={e=>setAccessCode(e.target.value)} placeholder="Digite o código da Licença" />
+                </div>
+            )}
+
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Senha</label>
+              <input type="password" required minLength={6} className="w-full p-3 bg-gray-50 rounded-xl outline-none border border-gray-100 focus:border-emerald-500 transition-colors" value={password} onChange={e=>setPassword(e.target.value)} placeholder="******" />
+            </div>
+            
+            <button type="submit" className="w-full bg-emerald-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-emerald-700 transition-all mt-4 active:scale-95">
+              {isRegistering ? 'Validar Licença e Entrar' : 'Entrar'}
+            </button>
+          </form>
+
+          <button onClick={() => setIsRegistering(!isRegistering)} className="w-full mt-4 text-xs text-gray-500 hover:text-emerald-600 font-bold py-2 transition-colors">
+            {isRegistering ? 'Já tenho conta. Fazer Login.' : 'Primeiro acesso? Ativar conta.'}
+          </button>
+        </div>
+      </div>
     );
   }
 
@@ -1309,14 +1425,13 @@ export default function App() {
   return (
     <div className={`h-screen w-screen flex flex-col overflow-hidden relative font-sans transition-colors duration-300 ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
       
-      {/* --- CABEÇALHO COM SELETOR DE ANO/MÊS --- */}
+      {/* --- CABEÇALHO DA APP (COM DATA E NAVEGAÇÃO) --- */}
       {screen !== AppScreen.Add && (
         <div className={`pt-8 pb-4 px-6 flex justify-between items-center z-10 shadow-sm rounded-b-[32px] transition-colors ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
            <button onClick={() => navigateMonth(-1)} className={`p-2 rounded-full transition-colors ${isDark ? 'hover:bg-gray-700 text-white' : 'hover:bg-gray-100 text-gray-600'}`}>
               <ChevronLeft size={24}/>
            </button>
            
-           {/* TÍTULO CLICÁVEL */}
            <div onClick={openDatePicker} className={`flex items-center gap-2 cursor-pointer px-4 py-2 rounded-xl transition-all active:scale-95 ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-50'}`}>
                <h2 className={`text-lg font-bold capitalize select-none ${isDark ? 'text-white' : 'text-gray-800'}`}>
                   {displayTitle}
@@ -1330,32 +1445,18 @@ export default function App() {
         </div>
       )}
 
-      {/* --- MODAL DO SELETOR DE DATA --- */}
+      {/* MODAL DATE PICKER */}
       {showDatePicker && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setShowDatePicker(false)}>
               <div className={`w-72 p-4 rounded-2xl shadow-2xl scale-100 animate-in zoom-in-95 ${isDark ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`} onClick={e => e.stopPropagation()}>
-                  
-                  {/* Navegação de ANO */}
                   <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100 dark:border-gray-700">
                       <button onClick={() => setPickerYear(pickerYear - 1)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full"><ChevronLeft size={20}/></button>
                       <span className="font-bold text-lg">{pickerYear}</span>
                       <button onClick={() => setPickerYear(pickerYear + 1)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full"><ChevronRight size={20}/></button>
                   </div>
-
-                  {/* Grade de MESES */}
                   <div className="grid grid-cols-3 gap-2">
                       {MONTHS.map((m, idx) => (
-                          <button 
-                            key={m} 
-                            onClick={() => selectDate(idx)}
-                            className={`py-3 rounded-xl text-sm font-bold transition-colors ${
-                                idx === currentDate.getMonth() && pickerYear === currentDate.getFullYear()
-                                ? 'bg-emerald-500 text-white shadow-lg'
-                                : (isDark ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-50 hover:bg-gray-100')
-                            }`}
-                          >
-                              {m}
-                          </button>
+                          <button key={m} onClick={() => selectDate(idx)} className={`py-3 rounded-xl text-sm font-bold transition-colors ${idx === currentDate.getMonth() && pickerYear === currentDate.getFullYear() ? 'bg-emerald-500 text-white shadow-lg' : (isDark ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-50 hover:bg-gray-100')}`}>{m}</button>
                       ))}
                   </div>
               </div>
