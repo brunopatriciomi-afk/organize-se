@@ -1,0 +1,15 @@
+{
+    "name": "Orulla Gestão Financeira",
+    "short_name": "Orulla",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#059669",
+    "icons": [
+      {
+        "src": "/logo.svg",
+        "type": "image/svg+xml",
+        "sizes": "512x512"
+      }
+    ]
+  }
