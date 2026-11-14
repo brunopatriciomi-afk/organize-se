@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Label
 } from 'recharts';
@@ -19,15 +19,30 @@ import {
 // Adicionei createUserWithEmailAndPassword para criar a conta após validar a chave
 import { 
   signInWithEmailAndPassword, onAuthStateChanged, signOut, type User,
-  createUserWithEmailAndPassword
+  createUserWithEmailAndPassword, updateProfile
 } from 'firebase/auth';
 
-import { db, auth } from './firebaseConfig';
+import { getAccountSession } from './accountSession';
+import {
+  normalizeEmail, readSavedAccounts, removeSavedAccount, upsertSavedAccount, getActiveAccountEmail,
+  setActiveAccountEmail, type SavedAccount
+} from './accountStorage';
+import { RenameCategoryModal } from './RenameCategoryModal';
+import { AccountSwitcherModal } from './AccountSwitcherModal';
+import { ProfileGreeting } from './ProfileGreeting';
 
 // --- 1. TIPOS ---
 export enum AppScreen { Home, Reports, Cards, Profile, Add }
 
 export interface Goal { id: string; name: string; amount: number; }
+
+export type CategoryType = 'expense' | 'income' | 'investment';
+const TRANSACTION_TYPE_BY_CATEGORY: Record<CategoryType, Transaction['type']> = {
+  expense: 'Saída',
+  income: 'Entrada',
+  investment: 'Investimento',
+};
+const WRITES_PER_BATCH = 450;
 
 export interface UserSettings {
   monthlyIncome: number;
@@ -784,12 +799,15 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
 };
 
 // --- COMPONENTE PERFIL (CORREÇÃO 3 - RENDA MENSAL COM SETINHA/EXPANSÍVEL) ---
-const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, onDeleteCategory, onLogout, monthlySavings, transactions, darkMode, onAddInitialBalance }: any) => {
+const Profile = ({ user, displayName, activeEmail, savedAccounts, onSaveName, onSwitchAccount, onAddAccount, categories, settings, onUpdateSettings, onAddCategory, onDeleteCategory, onRenameCategory, onLogout, monthlySavings, transactions, darkMode, onAddInitialBalance }: any) => {
   // States de visibilidade (Adicionei showIncome)
   const [showIncome, setShowIncome] = useState(false);
   const [showCats, setShowCats] = useState(false);
   const [showGoals, setShowGoals] = useState(false);
+  const [renaming, setRenaming] = useState<{ type: CategoryType; name: string } | null>(null);
   const [showInvestments, setShowInvestments] = useState(false);
+  const [showIncomeCats, setShowIncomeCats] = useState(false);
+  const [showAccounts, setShowAccounts] = useState(false);
   const [isAddingBalance, setIsAddingBalance] = useState(false);
   
   // States para os inputs
@@ -797,6 +815,7 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
   const [balanceCategory, setBalanceCategory] = useState('');
   const [newCat, setNewCat] = useState('');
   const [newInvestCat, setNewInvestCat] = useState('');
+  const [newIncomeCat, setNewIncomeCat] = useState('');
   const [newGoalName, setNewGoalName] = useState('');
   const [newGoalAmount, setNewGoalAmount] = useState('');
   
@@ -810,6 +829,7 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
   }, [settings]);
 
   const investmentCats = settings.investmentCategories || DEFAULT_INVEST_CATS;
+  const incomeCats: string[] = settings.incomeCategories || DEFAULT_INCOME_CATS;
 
   // SALVAR RENDA
   const handleSaveIncome = () => {
@@ -844,6 +864,13 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
     onUpdateSettings({ ...settings, goals: updatedGoals });
   };
   
+  const handleAddIncomeCat = () => {
+      const name = newIncomeCat.trim();
+      if(!name || incomeCats.includes(name)) return;
+      onUpdateSettings({ ...settings, incomeCategories: [...incomeCats, name] });
+      setNewIncomeCat('');
+  };
+
   const handleAddInvestCat = () => {
       if(!newInvestCat) return;
       const currentList = settings.investmentCategories || DEFAULT_INVEST_CATS;
@@ -886,6 +913,8 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
          <div onClick={toggleDarkMode} className={`p-2 rounded-full cursor-pointer transition-colors ${darkMode ? 'bg-gray-800 text-yellow-400' : 'bg-gray-100 text-gray-500'}`}>{darkMode ? <Sun size={20}/> : <Moon size={20}/>}</div>
       </div>
       
+      <ProfileGreeting displayName={displayName} email={user?.email ?? null} darkMode={darkMode} onSaveName={onSaveName} onOpenAccounts={() => setShowAccounts(true)} />
+
       <div className={`rounded-3xl p-6 text-white shadow-lg relative overflow-hidden ${darkMode ? 'bg-emerald-900' : 'bg-emerald-500'}`}>
          <div className="absolute -right-4 -top-4 opacity-10"><DollarSign size={100}/></div>
          <div className="flex items-center gap-2 mb-2 opacity-90"><DollarSign size={16}/> <span className="text-xs font-bold uppercase tracking-wider">Economia Mensal</span></div>
@@ -939,7 +968,7 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
 
          {/* INVESTIMENTOS */}
          <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-            <div onClick={() => setShowInvestments(!showInvestments)} className="p-4 flex items-center justify-between cursor-pointer"><div className="flex items-center gap-4"><div className={`p-3 rounded-full ${darkMode ? 'bg-indigo-900/50 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><TrendingUp size={20}/></div><div><p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Meus Investimentos</p><p className="text-xs text-gray-400">Gerenciar Categorias</p></div></div><ChevronRight size={16} className={`text-gray-300 transition-transform ${showInvestments ? 'rotate-90' : ''}`}/></div>
+            <div onClick={() => setShowInvestments(!showInvestments)} className="p-4 flex items-center justify-between cursor-pointer"><div className="flex items-center gap-4"><div className={`p-3 rounded-full ${darkMode ? 'bg-indigo-900/50 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><TrendingUp size={20}/></div><div><p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Categorias de Investimentos</p><p className="text-xs text-gray-400">Gerenciar categorias</p></div></div><ChevronRight size={16} className={`text-gray-300 transition-transform ${showInvestments ? 'rotate-90' : ''}`}/></div>
             {showInvestments && (
                 <div className={`px-4 pb-4 border-t animate-in slide-in-from-top-2 ${darkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50/50 border-gray-100'}`}>
                     {!isAddingBalance ? (
@@ -948,14 +977,25 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
                         <div className={`p-3 rounded-xl mb-4 border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}><p className="text-xs font-bold mb-2 text-gray-400">Novo Saldo / Ajuste</p><div className="space-y-2"><input type="number" placeholder="Valor (Ex: 1000)" value={balanceAmount} onChange={e=>setBalanceAmount(e.target.value)} className={`w-full p-2 text-sm rounded border ${darkMode ? 'bg-gray-600 border-gray-500 text-white' : 'bg-white'}`} /><select value={balanceCategory} onChange={e=>setBalanceCategory(e.target.value)} className={`w-full p-2 text-sm rounded border ${darkMode ? 'bg-gray-600 border-gray-500 text-white' : 'bg-white'}`}><option value="">Selecione a Categoria...</option>{investmentCats.map((c: string) => <option key={c} value={c}>{c}</option>)}</select><div className="flex gap-2 pt-1"><button onClick={() => setIsAddingBalance(false)} className="flex-1 py-2 text-xs text-gray-500 font-bold">Cancelar</button><button onClick={confirmInitialBalance} className="flex-1 py-2 text-xs bg-indigo-600 text-white rounded font-bold">Salvar</button></div></div></div>
                     )}
                     <div className="flex gap-2 mb-3 mt-3"><input placeholder="Nova Categoria (Ex: Cripto)" value={newInvestCat} onChange={e=>setNewInvestCat(e.target.value)} className={`flex-1 p-2 text-xs border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white'}`} /><button onClick={handleAddInvestCat} className="bg-emerald-600 text-white p-2 rounded-lg"><Plus size={16}/></button></div>
-                    <div className="space-y-2">{investmentCats.map((c: string) => { const total = investmentsSummary.find(i => i.name === c)?.value || 0; return (<div key={c} className={`flex justify-between items-center p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}><div><span className={`text-sm font-medium block ${darkMode ? 'text-white' : 'text-gray-700'}`}>{c}</span><span className="text-[10px] text-gray-400">Acumulado: {formatCurrency(total)}</span></div><button onClick={() => handleDeleteInvestCat(c)} className="text-gray-400 hover:text-rose-500"><Trash2 size={14}/></button></div>); })}</div>
+                    <div className="space-y-2">{investmentCats.map((c: string) => { const total = investmentsSummary.find(i => i.name === c)?.value || 0; return (<div key={c} className={`flex justify-between items-center p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}><div><span className={`text-sm font-medium block ${darkMode ? 'text-white' : 'text-gray-700'}`}>{c}</span><span className="text-[10px] text-gray-400">Acumulado: {formatCurrency(total)}</span></div><button onClick={() => setRenaming({ type: 'investment', name: c })} aria-label={`Renomear ${c}`} className="text-gray-400 hover:text-emerald-600 mr-2"><Edit2 size={14}/></button><button onClick={() => handleDeleteInvestCat(c)} className="text-gray-400 hover:text-rose-500"><Trash2 size={14}/></button></div>); })}</div>
+                </div>
+            )}
+         </div>
+
+         {/* RECEITAS */}
+         <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+            <div onClick={() => setShowIncomeCats(!showIncomeCats)} className="p-4 flex items-center justify-between cursor-pointer"><div className="flex items-center gap-4"><div className={`p-3 rounded-full ${darkMode ? 'bg-emerald-900/50 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}><ArrowUpCircle size={20}/></div><div><p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Categorias de Receitas</p><p className="text-xs text-gray-400">Gerenciar categorias</p></div></div><ChevronRight size={16} className={`text-gray-300 transition-transform ${showIncomeCats ? 'rotate-90' : ''}`}/></div>
+            {showIncomeCats && (
+                <div className={`px-4 pb-4 border-t animate-in slide-in-from-top-2 ${darkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50/50 border-gray-100'}`}>
+                    <div className="flex gap-2 mb-3 mt-3"><input placeholder="Nova Categoria (Ex: Freelance)" value={newIncomeCat} onChange={e=>setNewIncomeCat(e.target.value)} className={`flex-1 p-2 text-xs border rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white'}`} /><button onClick={handleAddIncomeCat} className="bg-emerald-600 text-white p-2 rounded-lg"><Plus size={16}/></button></div>
+                    <div className="space-y-2">{incomeCats.map((c: string) => (<div key={c} className={`flex justify-between items-center p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}><span className={`text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-700'}`}>{c}</span><button onClick={() => setRenaming({ type: 'income', name: c })} aria-label={`Renomear ${c}`} className="text-gray-400 hover:text-emerald-600"><Edit2 size={14}/></button></div>))}</div>
                 </div>
             )}
          </div>
 
          {/* LIMITES */}
          <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-             <div onClick={() => setShowCats(!showCats)} className="p-4 flex items-center justify-between cursor-pointer"><div className="flex items-center gap-4"><div className={`p-3 rounded-full ${darkMode ? 'bg-rose-900/50 text-rose-400' : 'bg-rose-50 text-rose-600'}`}><AlertCircle size={20}/></div><div><p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Limites de Despesas</p><p className="text-xs text-gray-400">{categories.length} categorias</p></div></div><ChevronRight size={16} className={`text-gray-300 transition-transform ${showCats ? 'rotate-90' : ''}`}/></div>
+             <div onClick={() => setShowCats(!showCats)} className="p-4 flex items-center justify-between cursor-pointer"><div className="flex items-center gap-4"><div className={`p-3 rounded-full ${darkMode ? 'bg-rose-900/50 text-rose-400' : 'bg-rose-50 text-rose-600'}`}><AlertCircle size={20}/></div><div><p className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>Categorias de Despesas</p><p className="text-xs text-gray-400">Gerenciar categorias e limites</p></div></div><ChevronRight size={16} className={`text-gray-300 transition-transform ${showCats ? 'rotate-90' : ''}`}/></div>
              {showCats && (
                <div className={`px-4 pb-4 border-t animate-in slide-in-from-top-2 ${darkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50/50 border-gray-100'}`}>
                    <div className="flex gap-2 mb-3 mt-3"><input value={newCat} onChange={e=>setNewCat(e.target.value)} placeholder="Nova categoria..." className={`flex-1 p-2 rounded-lg border text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white'}`}/><button onClick={() => { if(newCat) { onAddCategory(newCat); setNewCat(''); }}} className="bg-emerald-600 text-white p-2 rounded-lg"><Plus size={18}/></button></div>
@@ -975,6 +1015,7 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
                                    <button onClick={() => handleSaveLimit(c)} className="text-white bg-emerald-500 hover:bg-emerald-600 p-1.5 rounded-md transition-colors">
                                         <Check size={14}/>
                                    </button>
+                                   <button onClick={() => setRenaming({ type: 'expense', name: c })} aria-label={`Renomear ${c}`} className="text-gray-300 hover:text-emerald-600 ml-1"><Edit2 size={14}/></button>
                                    <button onClick={() => onDeleteCategory(c)} className="text-gray-300 hover:text-rose-500 ml-1"><Trash2 size={14}/></button>
                                </div>
                            </div>
@@ -985,6 +1026,25 @@ const Profile = ({ user, categories, settings, onUpdateSettings, onAddCategory, 
          </div>
       </div>
       <button onClick={onLogout} className={`w-full py-4 font-bold rounded-2xl flex items-center justify-center gap-2 transition-colors mt-6 ${darkMode ? 'text-rose-400 bg-rose-900/20 hover:bg-rose-900/30' : 'text-rose-500 bg-rose-50 hover:bg-rose-100'}`}><LogOut size={18} /> Sair da Conta</button>
+      {showAccounts && (
+        <AccountSwitcherModal
+          accounts={savedAccounts}
+          activeEmail={activeEmail}
+          darkMode={darkMode}
+          onSelect={(targetEmail: string) => { setShowAccounts(false); onSwitchAccount(targetEmail); }}
+          onAddAccount={() => { setShowAccounts(false); onAddAccount(); }}
+          onClose={() => setShowAccounts(false)}
+        />
+      )}
+      {renaming && (
+        <RenameCategoryModal
+          currentName={renaming.name}
+          existingNames={renaming.type === 'expense' ? categories : renaming.type === 'income' ? incomeCats : investmentCats}
+          darkMode={darkMode}
+          onClose={() => setRenaming(null)}
+          onSave={async (newName: string) => { await onRenameCategory(renaming.type, renaming.name, newName); setRenaming(null); }}
+        />
+      )}
     </div>
   );
 };
@@ -1121,7 +1181,12 @@ const AddTransaction = ({ onSave, onCancel, categories, cards, settings, monthDe
 };
 // --- 4. APP PRINCIPAL (VERSÃO FINAL: ORULLA + LICENÇAS + DATA PICKER) ---
 export default function App() {
+  const [activeEmail, setActiveEmail] = useState<string | null>(() => getActiveAccountEmail());
+  const { auth, db } = useMemo(() => getAccountSession(activeEmail), [activeEmail]);
+  const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>(() => readSavedAccounts());
+  const [addingAccount, setAddingAccount] = useState(false);
   const [user, setUser] = useState<User | null>(null);
+  const [displayName, setDisplayName] = useState('');
   const [rawTransactions, setRawTransactions] = useState<Transaction[]>([]);
   
   // Cartões começam vazios (depende do INITIAL_CARDS que definimos antes)
@@ -1142,6 +1207,7 @@ export default function App() {
   // --- LOGIN E CADASTRO ---
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
   const [isRegistering, setIsRegistering] = useState(false); // Alternar entre Login/Cadastro
   const [accessCode, setAccessCode] = useState(''); // O Código da licença
 
@@ -1164,59 +1230,64 @@ export default function App() {
     document.body.style.overscrollBehaviorY = 'none';
   }, []);
 
-// Carregar dados do Firebase
-useEffect(() => {
-  return onAuthStateChanged(auth, (u) => {
-    setUser(u); 
-    setLoading(false);
-    
-    if(u) {
-      // Se tem usuário, busca os dados
-      const unsubTrans = onSnapshot(query(collection(db, `users/${u.uid}/transactions`)), (snap) => {
-        const data = snap.docs.map(d => d.data() as Transaction);
-        data.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        setRawTransactions(data);
-      });
+  const clearAccountData = useCallback(() => {
+    setRawTransactions([]);
+    setCards([]);
+    setCategories(DEFAULT_EXPENSE_CATS);
+    setSettings({ monthlyIncome: 0, goals: [], darkMode: false, categoryLimits: {} });
+  }, []);
 
-      const unsubCards = onSnapshot(doc(db, `users/${u.uid}/settings`, 'cards'), (snap) => { 
-          // Se o documento existe, usa ele. Se não (conta nova), ZERA a lista.
-          if(snap.exists() && snap.data().list) {
-              setCards(snap.data().list);
+  // Carregar dados do Firebase da conta ativa
+  useEffect(() => {
+    let unsubscribers: Array<() => void> = [];
+    const stopDataListeners = () => {
+      unsubscribers.forEach(unsub => unsub());
+      unsubscribers = [];
+    };
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (u) => {
+      stopDataListeners();
+      setUser(u);
+      setDisplayName(u?.displayName ?? '');
+      setLoading(false);
+
+      if (!u) {
+        clearAccountData();
+        return;
+      }
+
+      if (u.email) {
+        upsertSavedAccount({ uid: u.uid, email: normalizeEmail(u.email), displayName: u.displayName ?? '' });
+        setSavedAccounts(readSavedAccounts());
+      }
+
+      unsubscribers = [
+        onSnapshot(query(collection(db, `users/${u.uid}/transactions`)), (snap) => {
+          const data = snap.docs.map(d => d.data() as Transaction);
+          data.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          setRawTransactions(data);
+        }),
+        onSnapshot(doc(db, `users/${u.uid}/settings`, 'cards'), (snap) => {
+          setCards(snap.exists() && snap.data().list ? snap.data().list : []);
+        }),
+        onSnapshot(doc(db, `users/${u.uid}/settings`, 'config'), (snap) => {
+          if (snap.exists()) {
+            const d = snap.data();
+            setCategories(d.categories ?? DEFAULT_EXPENSE_CATS);
+            setSettings(d.userSettings ?? { monthlyIncome: 0, goals: [], darkMode: false, categoryLimits: {} });
           } else {
-              setCards([]); // <--- IMPORTANTE: Garante que começa vazio se não tiver nada no banco
+            setCategories(DEFAULT_EXPENSE_CATS);
+            setSettings({ monthlyIncome: 0, goals: [], darkMode: false, categoryLimits: {} });
           }
-      });
+        }),
+      ];
+    });
 
-      const unsubConfig = onSnapshot(doc(db, `users/${u.uid}/settings`, 'config'), (snap) => { 
-          if(snap.exists()) { 
-              const d = snap.data(); 
-              if(d.categories) setCategories(d.categories); 
-              else setCategories(DEFAULT_EXPENSE_CATS); // Reseta se não tiver
-              
-              if(d.userSettings) setSettings(d.userSettings); 
-              else setSettings({ monthlyIncome: 0, goals: [], darkMode: false, categoryLimits: {} }); // Reseta se não tiver
-          } else {
-              // Conta nova: Restaura padrões
-              setCategories(DEFAULT_EXPENSE_CATS);
-              setSettings({ monthlyIncome: 0, goals: [], darkMode: false, categoryLimits: {} });
-          }
-      });
-
-      return () => {
-          unsubTrans();
-          unsubCards();
-          unsubConfig();
-      };
-
-    } else {
-      // SE NÃO TEM USUÁRIO (LOGOUT), LIMPA TUDO DA MEMÓRIA
-      setRawTransactions([]);
-      setCards([]); 
-      setCategories(DEFAULT_EXPENSE_CATS);
-      setSettings({ monthlyIncome: 0, goals: [], darkMode: false, categoryLimits: {} });
-    }
-  });
-}, []);
+    return () => {
+      stopDataListeners();
+      unsubscribeAuth();
+    };
+  }, [auth, db, clearAccountData]);
 
   const filteredTransactions = useMemo(() => rawTransactions.filter(t => t.month === selectedMonthKey), [rawTransactions, selectedMonthKey]);
   
@@ -1231,12 +1302,19 @@ useEffect(() => {
   }, [filteredTransactions]);
 
   // --- NOVA LÓGICA DE AUTENTICAÇÃO (COM VERIFICAÇÃO DE CHAVE) ---
-  const handleAuth = async (e: any) => {
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    const normalizedEmail = normalizeEmail(email);
+    const target = getAccountSession(normalizedEmail);
     setLoading(true);
     try {
       if (isRegistering) {
         // 1. Validar input
+        const trimmedName = fullName.trim();
+        if (!trimmedName) {
+            alert("Por favor, digite seu nome.");
+            setLoading(false); return;
+        }
         const codeInput = accessCode.trim().toUpperCase();
         if (!codeInput) {
             alert("Por favor, digite seu código de acesso (enviado por e-mail).");
@@ -1244,7 +1322,7 @@ useEffect(() => {
         }
 
         // 2. Buscar a chave no Banco de Dados (Coleção 'invites')
-        const inviteRef = doc(db, "invites", codeInput);
+        const inviteRef = doc(target.db, "invites", codeInput);
         const inviteSnap = await getDoc(inviteRef);
 
         // 3. Verificar validade
@@ -1259,13 +1337,15 @@ useEffect(() => {
         }
 
         // 4. Criar Usuário
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const userCredential = await createUserWithEmailAndPassword(target.auth, normalizedEmail, password);
         const newUser = userCredential.user;
+        await updateProfile(newUser, { displayName: trimmedName });
+        upsertSavedAccount({ uid: newUser.uid, email: normalizedEmail, displayName: trimmedName });
 
         // 5. "Queimar" a chave (Marcar como usada)
         await updateDoc(inviteRef, {
             used: true,
-            usedBy: email,
+            usedBy: normalizedEmail,
             usedAt: new Date().toISOString(),
             uid: newUser.uid
         });
@@ -1273,8 +1353,12 @@ useEffect(() => {
         alert("Bem-vindo ao Orulla! Cadastro realizado com sucesso.");
       } else {
         // Login normal
-        await signInWithEmailAndPassword(auth, email, password);
+        await signInWithEmailAndPassword(target.auth, normalizedEmail, password);
       }
+      setActiveEmail(normalizedEmail);
+      setActiveAccountEmail(normalizedEmail);
+      setSavedAccounts(readSavedAccounts());
+      setAddingAccount(false);
     } catch (e: any) {
       console.error(e);
       let msg = "Erro ao entrar.";
@@ -1287,6 +1371,38 @@ useEffect(() => {
     }
   };
   
+  const switchAccount = (targetEmail: string) => {
+    setAddingAccount(false);
+    if (targetEmail === activeEmail) return;
+    clearAccountData();
+    setEmail(targetEmail);
+    setActiveEmail(targetEmail);
+    setActiveAccountEmail(targetEmail);
+  };
+
+  const handleSignOut = () => {
+    const outgoing = auth;
+    if (activeEmail) removeSavedAccount(activeEmail);
+    const next = readSavedAccounts()[0] ?? null;
+    setSavedAccounts(readSavedAccounts());
+    clearAccountData();
+    setAddingAccount(false);
+    setEmail(next?.email ?? '');
+    setActiveEmail(next?.email ?? null);
+    setActiveAccountEmail(next?.email ?? null);
+    void signOut(outgoing);
+  };
+
+  const saveDisplayName = async (newName: string) => {
+    if (!user) return;
+    await updateProfile(user, { displayName: newName });
+    setDisplayName(newName);
+    if (user.email) {
+      upsertSavedAccount({ uid: user.uid, email: normalizeEmail(user.email), displayName: newName });
+      setSavedAccounts(readSavedAccounts());
+    }
+  };
+
   const addTransactions = async (newTrans: Transaction[]) => {
     if(!user) return;
     const batch = writeBatch(db);
@@ -1382,6 +1498,44 @@ useEffect(() => {
 
   const updateSettings = async (newSettings: UserSettings) => { if(!user) return; setSettings(newSettings); await setDoc(doc(db, `users/${user.uid}/settings`, 'config'), { userSettings: newSettings }, { merge: true }); };
   const updateCategories = async (newCats: string[]) => { if(!user) return; setCategories(newCats); await setDoc(doc(db, `users/${user.uid}/settings`, 'config'), { categories: newCats }, { merge: true }); };
+
+  const renameCategory = async (type: CategoryType, oldName: string, newName: string) => {
+    if (!user) return;
+    const swap = (list: string[]) => list.map(c => (c === oldName ? newName : c));
+    const newSettings: UserSettings = { ...settings };
+    const configUpdate: Record<string, unknown> = {};
+
+    if (type === 'expense') {
+      const newCats = swap(categories);
+      configUpdate.categories = newCats;
+      if (settings.expenseCategories) newSettings.expenseCategories = swap(settings.expenseCategories);
+      if (settings.categoryLimits && oldName in settings.categoryLimits) {
+        const { [oldName]: limit, ...rest } = settings.categoryLimits;
+        newSettings.categoryLimits = { ...rest, [newName]: limit };
+      }
+      setCategories(newCats);
+    } else if (type === 'income') {
+      newSettings.incomeCategories = swap(settings.incomeCategories || DEFAULT_INCOME_CATS);
+    } else {
+      newSettings.investmentCategories = swap(settings.investmentCategories || DEFAULT_INVEST_CATS);
+    }
+    configUpdate.userSettings = newSettings;
+    setSettings(newSettings);
+
+    const txType = TRANSACTION_TYPE_BY_CATEGORY[type];
+    const affected = rawTransactions.filter(t => t.category === oldName && t.type === txType);
+    const configRef = doc(db, `users/${user.uid}/settings`, 'config');
+    const chunks: Transaction[][] = [];
+    for (let i = 0; i < affected.length; i += WRITES_PER_BATCH) chunks.push(affected.slice(i, i + WRITES_PER_BATCH));
+    if (chunks.length === 0) chunks.push([]);
+
+    for (const [index, chunk] of chunks.entries()) {
+      const batch = writeBatch(db);
+      if (index === 0) batch.set(configRef, configUpdate, { merge: true });
+      chunk.forEach(t => batch.update(doc(db, `users/${user.uid}/transactions`, t.id), { category: newName }));
+      await batch.commit();
+    }
+  };
   const saveCard = async (updatedCard: CardData) => { if(!user) return; const exists = cards.find(c => c.id === updatedCard.id); const newList = exists ? cards.map(c => c.id === updatedCard.id ? updatedCard : c) : [...cards, updatedCard]; setCards(newList); await setDoc(doc(db, `users/${user.uid}/settings`, 'cards'), { list: newList }, { merge: true }); };
   const deleteCard = async (cardId: string) => { if(!user) return; const newList = cards.filter(c => c.id !== cardId); setCards(newList); await setDoc(doc(db, `users/${user.uid}/settings`, 'cards'), { list: newList }, { merge: true }); };
 
@@ -1397,7 +1551,7 @@ useEffect(() => {
   if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-emerald-500"/></div>;
 
   // --- TELA DE LOGIN / CADASTRO (ORULLA) ---
-  if (!user) {
+  if (!user || addingAccount) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-gray-50 font-sans">
         <div className="w-full max-w-sm bg-white p-8 rounded-[32px] shadow-xl border border-gray-100 animate-in fade-in zoom-in-95 duration-300">
@@ -1428,6 +1582,13 @@ useEffect(() => {
               <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Email</label>
               <input type="email" required className="w-full p-3 bg-gray-50 rounded-xl outline-none border border-gray-100 focus:border-emerald-500 transition-colors" value={email} onChange={e=>setEmail(e.target.value)} placeholder="seu@email.com" />
             </div>
+
+            {isRegistering && (
+              <div className="animate-in slide-in-from-top-2">
+                <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Seu Nome</label>
+                <input type="text" required className="w-full p-3 bg-gray-50 rounded-xl outline-none border border-gray-100 focus:border-emerald-500 transition-colors" value={fullName} onChange={e=>setFullName(e.target.value)} placeholder="Como você quer ser chamado" />
+              </div>
+            )}
             
             {/* CAMPO DE CÓDIGO DE ACESSO (SÓ NO CADASTRO) */}
             {isRegistering && (
@@ -1450,6 +1611,9 @@ useEffect(() => {
           <button onClick={() => setIsRegistering(!isRegistering)} className="w-full mt-4 text-xs text-gray-500 hover:text-emerald-600 font-bold py-2 transition-colors">
             {isRegistering ? 'Já tenho conta. Fazer Login.' : 'Primeiro acesso? Ativar conta.'}
           </button>
+          {addingAccount && (
+            <button onClick={() => setAddingAccount(false)} className="w-full mt-2 text-xs text-gray-500 hover:text-emerald-600 font-bold py-2 transition-colors">Voltar para a conta atual</button>
+          )}
         </div>
       </div>
     );
@@ -1502,7 +1666,7 @@ useEffect(() => {
         {screen === AppScreen.Home && <Home transactions={filteredTransactions} monthDetails={monthDetails} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'home'})} onTransferBalance={transferBalance} darkMode={isDark} />}
         {screen === AppScreen.Reports && <Reports transactions={filteredTransactions} categories={categories} settings={settings} darkMode={isDark} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'reports'})} />}
         {screen === AppScreen.Cards && <CardsScreen cards={cards} transactions={rawTransactions} currentMonthKey={selectedMonthKey} onSaveCard={saveCard} onDeleteCard={deleteCard} darkMode={isDark} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'cards'})} />}
-        {screen === AppScreen.Profile && <Profile user={user} categories={categories} settings={settings} transactions={rawTransactions} onUpdateSettings={updateSettings} onAddCategory={(c:string)=>updateCategories([...categories,c])} onDeleteCategory={(c:string)=>updateCategories(categories.filter(x=>x!==c))} onLogout={()=>signOut(auth)} monthlySavings={monthDetails.balance} darkMode={isDark} onAddInitialBalance={addInitialBalance} />}
+        {screen === AppScreen.Profile && <Profile user={user} displayName={displayName} activeEmail={activeEmail} savedAccounts={savedAccounts} onSaveName={saveDisplayName} onSwitchAccount={switchAccount} onAddAccount={() => setAddingAccount(true)} categories={categories} settings={settings} transactions={rawTransactions} onUpdateSettings={updateSettings} onAddCategory={(c:string)=>updateCategories([...categories,c])} onDeleteCategory={(c:string)=>updateCategories(categories.filter(x=>x!==c))} onRenameCategory={renameCategory} onLogout={handleSignOut} monthlySavings={monthDetails.balance} darkMode={isDark} onAddInitialBalance={addInitialBalance} />}
       </div>
       
       {screen !== AppScreen.Add && (
