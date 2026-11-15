@@ -2,6 +2,7 @@ export interface SavedAccount {
   uid: string;
   email: string;
   displayName: string;
+  photoURL?: string;
 }
 
 const SAVED_ACCOUNTS_KEY = 'savedAccounts';
@@ -35,8 +36,13 @@ export const upsertSavedAccount = (account: SavedAccount) => {
   const accounts = readSavedAccounts();
   const exists = accounts.some(a => a.email === account.email);
   const next = exists
-    ? accounts.map(a => (a.email === account.email ? account : a))
+    ? accounts.map(a => (a.email === account.email ? { ...a, ...account } : a))
     : [...accounts, account];
+  localStorage.setItem(SAVED_ACCOUNTS_KEY, JSON.stringify(next));
+};
+
+export const setSavedAccountPhoto = (email: string, photoURL: string) => {
+  const next = readSavedAccounts().map(a => (a.email === email ? { ...a, photoURL } : a));
   localStorage.setItem(SAVED_ACCOUNTS_KEY, JSON.stringify(next));
 };
 

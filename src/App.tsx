@@ -25,7 +25,7 @@ import {
 import { getAccountSession } from './accountSession';
 import {
   normalizeEmail, readSavedAccounts, removeSavedAccount, upsertSavedAccount, getActiveAccountEmail,
-  setActiveAccountEmail, type SavedAccount
+  setActiveAccountEmail, setSavedAccountPhoto, type SavedAccount
 } from './accountStorage';
 import { RenameCategoryModal } from './RenameCategoryModal';
 import { AccountSwitcherModal } from './AccountSwitcherModal';
@@ -52,6 +52,7 @@ export interface UserSettings {
   incomeCategories?: string[];
   investmentCategories?: string[];
   expenseCategories?: string[];
+  profilePhoto?: string;
 }
 
 export interface CardData {
@@ -799,7 +800,7 @@ const CardsScreen = ({ cards, transactions, currentMonthKey, onSaveCard, onDelet
 };
 
 // --- COMPONENTE PERFIL (CORREÇÃO 3 - RENDA MENSAL COM SETINHA/EXPANSÍVEL) ---
-const Profile = ({ user, displayName, activeEmail, savedAccounts, onSaveName, onSwitchAccount, onAddAccount, categories, settings, onUpdateSettings, onAddCategory, onDeleteCategory, onRenameCategory, onLogout, monthlySavings, transactions, darkMode, onAddInitialBalance }: any) => {
+const Profile = ({ user, displayName, activeEmail, savedAccounts, onSaveName, onSavePhoto, onSwitchAccount, onAddAccount, categories, settings, onUpdateSettings, onAddCategory, onDeleteCategory, onRenameCategory, onLogout, monthlySavings, transactions, darkMode, onAddInitialBalance }: any) => {
   // States de visibilidade (Adicionei showIncome)
   const [showIncome, setShowIncome] = useState(false);
   const [showCats, setShowCats] = useState(false);
@@ -913,7 +914,7 @@ const Profile = ({ user, displayName, activeEmail, savedAccounts, onSaveName, on
          <div onClick={toggleDarkMode} className={`p-2 rounded-full cursor-pointer transition-colors ${darkMode ? 'bg-gray-800 text-yellow-400' : 'bg-gray-100 text-gray-500'}`}>{darkMode ? <Sun size={20}/> : <Moon size={20}/>}</div>
       </div>
       
-      <ProfileGreeting displayName={displayName} email={user?.email ?? null} darkMode={darkMode} onSaveName={onSaveName} onOpenAccounts={() => setShowAccounts(true)} />
+      <ProfileGreeting displayName={displayName} email={user?.email ?? null} photoURL={settings.profilePhoto ?? null} darkMode={darkMode} onSaveName={onSaveName} onSavePhoto={onSavePhoto} onOpenAccounts={() => setShowAccounts(true)} />
 
       <div className={`rounded-3xl p-6 text-white shadow-lg relative overflow-hidden ${darkMode ? 'bg-emerald-900' : 'bg-emerald-500'}`}>
          <div className="absolute -right-4 -top-4 opacity-10"><DollarSign size={100}/></div>
@@ -1499,6 +1500,28 @@ export default function App() {
   const updateSettings = async (newSettings: UserSettings) => { if(!user) return; setSettings(newSettings); await setDoc(doc(db, `users/${user.uid}/settings`, 'config'), { userSettings: newSettings }, { merge: true }); };
   const updateCategories = async (newCats: string[]) => { if(!user) return; setCategories(newCats); await setDoc(doc(db, `users/${user.uid}/settings`, 'config'), { categories: newCats }, { merge: true }); };
 
+  const deleteCategory = async (name: string) => {
+    if (!user) return;
+    const newCats = categories.filter(c => c !== name);
+    const categoryLimits = { ...settings.categoryLimits };
+    delete categoryLimits[name];
+    const newSettings: UserSettings = {
+      ...settings,
+      categoryLimits,
+      ...(settings.expenseCategories ? { expenseCategories: settings.expenseCategories.filter(c => c !== name) } : {}),
+    };
+    setCategories(newCats);
+    setSettings(newSettings);
+    await setDoc(doc(db, `users/${user.uid}/settings`, 'config'), { categories: newCats, userSettings: newSettings }, { merge: true });
+  };
+
+  const savePhoto = async (dataUrl: string) => {
+    if (!user?.email) throw new Error('Nenhum usuário ativo.');
+    await updateSettings({ ...settings, profilePhoto: dataUrl });
+    setSavedAccountPhoto(normalizeEmail(user.email), dataUrl);
+    setSavedAccounts(readSavedAccounts());
+  };
+
   const renameCategory = async (type: CategoryType, oldName: string, newName: string) => {
     if (!user) return;
     const swap = (list: string[]) => list.map(c => (c === oldName ? newName : c));
@@ -1666,11 +1689,11 @@ export default function App() {
         {screen === AppScreen.Home && <Home transactions={filteredTransactions} monthDetails={monthDetails} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'home'})} onTransferBalance={transferBalance} darkMode={isDark} />}
         {screen === AppScreen.Reports && <Reports transactions={filteredTransactions} categories={categories} settings={settings} darkMode={isDark} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'reports'})} />}
         {screen === AppScreen.Cards && <CardsScreen cards={cards} transactions={rawTransactions} currentMonthKey={selectedMonthKey} onSaveCard={saveCard} onDeleteCard={deleteCard} darkMode={isDark} onSelectTransaction={(t:any) => setEditingTransaction({data: t, mode: 'cards'})} />}
-        {screen === AppScreen.Profile && <Profile user={user} displayName={displayName} activeEmail={activeEmail} savedAccounts={savedAccounts} onSaveName={saveDisplayName} onSwitchAccount={switchAccount} onAddAccount={() => setAddingAccount(true)} categories={categories} settings={settings} transactions={rawTransactions} onUpdateSettings={updateSettings} onAddCategory={(c:string)=>updateCategories([...categories,c])} onDeleteCategory={(c:string)=>updateCategories(categories.filter(x=>x!==c))} onRenameCategory={renameCategory} onLogout={handleSignOut} monthlySavings={monthDetails.balance} darkMode={isDark} onAddInitialBalance={addInitialBalance} />}
+        {screen === AppScreen.Profile && <Profile user={user} displayName={displayName} activeEmail={activeEmail} savedAccounts={savedAccounts} onSaveName={saveDisplayName} onSwitchAccount={switchAccount} onAddAccount={() => setAddingAccount(true)} categories={categories} settings={settings} transactions={rawTransactions} onUpdateSettings={updateSettings} onAddCategory={(c:string)=>updateCategories([...categories,c])} onDeleteCategory={deleteCategory} onSavePhoto={savePhoto} onRenameCategory={renameCategory} onLogout={handleSignOut} monthlySavings={monthDetails.balance} darkMode={isDark} onAddInitialBalance={addInitialBalance} />}
       </div>
       
       {screen !== AppScreen.Add && (
-        <div className={`fixed bottom-0 w-full border-t p-2 pb-6 flex justify-between items-center px-8 z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-100'}`}><button onClick={() => setScreen(AppScreen.Home)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Home ? 'text-emerald-500' : 'text-gray-400'}`}><LayoutDashboard size={24} strokeWidth={screen===AppScreen.Home?2.5:2} /><span className="text-[10px] font-bold">Início</span></button><button onClick={() => setScreen(AppScreen.Cards)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Cards ? 'text-emerald-500' : 'text-gray-400'}`}><CreditCard size={24} strokeWidth={screen===AppScreen.Cards?2.5:2} /><span className="text-[10px] font-bold">Cartões</span></button><div className="relative -top-8"><button onClick={() => setScreen(AppScreen.Add)} className={`w-14 h-14 rounded-full shadow-xl flex items-center justify-center hover:scale-105 transition-transform ${isDark ? 'bg-emerald-600 text-white shadow-none' : 'bg-emerald-600 text-white shadow-emerald-100/50'}`}><Plus size={32}/></button></div><button onClick={() => setScreen(AppScreen.Reports)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Reports ? 'text-emerald-500' : 'text-gray-400'}`}><PieChartIcon size={24} strokeWidth={screen===AppScreen.Reports?2.5:2} /><span className="text-[10px] font-bold">Relatórios</span></button><button onClick={() => setScreen(AppScreen.Profile)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Profile ? 'text-emerald-500' : 'text-gray-400'}`}><UserIcon size={24} strokeWidth={screen===AppScreen.Profile?2.5:2} /><span className="text-[10px] font-bold">Perfil</span></button></div>
+        <div className={`fixed bottom-0 w-full border-t p-2 pb-6 flex justify-between items-center px-8 z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-100'}`}><button onClick={() => setScreen(AppScreen.Home)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Home ? 'text-emerald-500' : 'text-gray-400'}`}><LayoutDashboard size={24} strokeWidth={screen===AppScreen.Home?2.5:2} /><span className="text-[10px] font-bold">Início</span></button><button onClick={() => setScreen(AppScreen.Cards)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Cards ? 'text-emerald-500' : 'text-gray-400'}`}><CreditCard size={24} strokeWidth={screen===AppScreen.Cards?2.5:2} /><span className="text-[10px] font-bold">Cartões</span></button><div className="relative -top-8"><button onClick={() => setScreen(AppScreen.Add)} className={`w-14 h-14 rounded-full shadow-xl flex items-center justify-center hover:scale-105 transition-transform ${isDark ? 'bg-emerald-600 text-white shadow-none' : 'bg-emerald-600 text-white shadow-emerald-100/50'}`}><Plus size={32}/></button></div><button onClick={() => setScreen(AppScreen.Reports)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Reports ? 'text-emerald-500' : 'text-gray-400'}`}><PieChartIcon size={24} strokeWidth={screen===AppScreen.Reports?2.5:2} /><span className="text-[10px] font-bold">Relatórios</span></button><button onClick={() => setScreen(AppScreen.Profile)} className={`flex flex-col items-center gap-1 ${screen === AppScreen.Profile ? 'text-emerald-500' : 'text-gray-400'}`}>{settings.profilePhoto ? <img src={settings.profilePhoto} alt="" className={`w-6 h-6 rounded-full object-cover ${screen === AppScreen.Profile ? 'ring-2 ring-emerald-500' : ''}`} /> : <UserIcon size={24} strokeWidth={screen===AppScreen.Profile?2.5:2} />}<span className="text-[10px] font-bold">Perfil</span></button></div>
       )}
       
       {screen === AppScreen.Add && <AddTransaction categories={categories} cards={cards} settings={settings} monthDetails={monthDetails} onSave={addTransactions} onCancel={() => setScreen(AppScreen.Home)} darkMode={isDark} />}
