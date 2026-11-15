@@ -87,7 +87,7 @@ export const ProfileGreeting = ({ displayName, email, photoURL, darkMode, onSave
             <input ref={fileInputRef} type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
           </div>
           <div className="min-w-0">
-            <h2 className={`text-2xl font-bold truncate ${textColor}`}>
+            <h2 className={`text-xl sm:text-2xl font-bold leading-tight break-words ${textColor}`}>
               {greetingName ? `Olá, ${greetingName}` : 'Olá!'}
             </h2>
             {email && <p className="text-xs text-gray-400 truncate">{email}</p>}
